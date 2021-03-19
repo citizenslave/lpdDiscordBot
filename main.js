@@ -653,7 +653,7 @@ function manageRules(guildId, channelId, messageId) {
             console.log(`Rules ready!`);
             if (!message.reactions.cache.get('🦔')) message.react('🦔');
             else message.reactions.cache.get('🦔').users.fetch(CLIENT.user.id).then(users => {
-                if (!users.get(CLIENT.user.id)) message.react('🦔');//:lpd:816223082728783902
+                if (!users.get(CLIENT.user.id)) message.react('🦔');
             });
             rulesListener.on('collect', (r, u) => {
                 if (!u.bot) r.users.remove(u.id);
