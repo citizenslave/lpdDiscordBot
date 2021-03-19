@@ -660,7 +660,7 @@ function manageRules(guildId, channelId, messageId) {
                 const hash = Buffer.from(r.emoji.name.toString()).toString('hex');
                 if (hash === 'f09fa694' || hash === '6c7064') {
                     guild.members.fetch(u.id).then(member => {
-                        // if (member.roles.cache.has(GENERAL)) return;
+                        if (member.roles.cache.has(GENERAL)) return;
                         if (u.bot) return;
                         console.log(`Rules (accept): ${u.username}`);
                         guild.channels.resolve('822343177104261160').send(`<@${u.id}> has accepted the rules.`);
@@ -669,9 +669,9 @@ function manageRules(guildId, channelId, messageId) {
                                     'We rely on donors donors like you to fund all of our activities.\n\nThank you for your support!',
                                     new DISCORD.MessageEmbed().setTitle('Donate to the LPD').setURL('https://www.lpdelaware.org/p/donate.html')
                                             .setDescription(`The State Board has currently established funds for:\n`+
-                                                    `- The 2021 Convention\n`+
-                                                    `- The Social Media and Marketing Committee\n`+
-                                                    `- Hosting the [LPD Activism Application](https://app.lpdelaware.org) on Google Cloud Hosting\n`+
+                                                    ` • The 2021 Convention\n`+
+                                                    ` • The Social Media and Marketing Committee\n`+
+                                                    ` • Hosting the [LPD Activism Application](https://app.lpdelaware.org) on Google Cloud Hosting\n`+
                                                     `All other donations go to the general fund to be spent at the discretion of the LPD State Board `+
                                                     `on everything from fundraising events to outreach to candidate support.`));
                         });
@@ -680,6 +680,8 @@ function manageRules(guildId, channelId, messageId) {
                     });
                 };
             });
+        }, e => {
+            console.log(`Rules message not found!`);
         });
     });
 }
