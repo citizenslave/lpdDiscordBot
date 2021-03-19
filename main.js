@@ -37,6 +37,17 @@ const HELP_TEXT = [`Anyone can run this command:`,``,`\`/lpd poll Is this how I 
         `\`/lpd role #2021-convention-session clear\``,
         `This command removes all users granted individual access to a channel.`
     ];
+const RULES = `1. No commercial spam. This is a political party server. We are not here shopping except for candidates `+
+        `and political campaign items.\n`+
+        `2. Be respectful. We are all either Libertarians or guests looking to learn more about the Libertarian Party. Your `+
+        `behavior on this server reflects on the party. Behave accordingly. Also, this is a volunteer organization. Volunteers `+
+        `have a choice how they spend their time and spending their time helping us merits gratitude, not disrespect.\n`+
+        `3. Read the room. Do not post the same thing over and over again if it is clear no one is interested. This is not your `+
+        `server for your own personal crusades, it is for coordinating action and educating the public for the LP.\n`+
+        `4. Honesty. We try to share accurate information here and hold ourselves to a higher standard of truthfulness and transparency.\n`+
+        `5. Use your real name if you need permissions granted for any particular channel or purpose to aid in verifying your identity.\n\n`+
+
+        `Please pet the :hedgehog: to accept these rules and access the rest of the server.`;
 const LPD_LINKS = [`State Links: 
     http://lpdelaware.org/
     https://www.facebook.com/LPDel/
@@ -90,6 +101,8 @@ const SPEAKER_VOICE_PERMS = OBSERVER_VOICE_PERMS | DISCORD_PERMS.SPEAK | DISCORD
 let voteId = 0;
 const voteData = PERSISTENCE.readFile();
 
+let rulesMsg;
+
 function processCommand(command, fullCommand) {
     console.log(command);
     let channel, rolesCache, guild;
@@ -123,6 +136,15 @@ function processCommand(command, fullCommand) {
             if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
             ephemeral('pong', fullCommand);
             break;
+        case 'rules':
+            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
+            ephemeral(null, fullCommand);
+            const rulesEmbed = new DISCORD.MessageEmbed().setDescription(RULES).setTitle('LPD Server Rules');
+            channel.send(rulesEmbed).then(message => {
+                manageRules('814614335229263945', '814614335744639058', message.id);
+                console.log(`New rules message: ${message.id}`);
+            });
+            break;
         case 'list':
             if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
             ephemeral(null, fullCommand);
@@ -153,20 +175,15 @@ function processCommand(command, fullCommand) {
             // console.log(guild.channels.cache.map(c => c.name === 'Private Meeting Room'?c.name:false));
             // const pvtChan = guild.channels.cache.filter(c => c.name === 'Private Meeting Room').first();
             // console.log(pvtChan.permissionOverwrites.get('814623899156217936').allow.bitfield, SPEAKER_VOICE_PERMS);
-            console.log(guild.channels.cache.map(c => `${c.name}: ${c.id}`));
+            // console.log(guild.channels.cache.map(c => `${c.name}: ${c.id}`));
             break;
         case 'clear':
             if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            ephemeral(null, fullCommand);
-            channel.messages.fetch().then(messages => {
-                const messageLog = [];
-                messages.forEach(message => {
-                    message.delete();
-                    // messageLog.push(JSON.stringify(message));
-                    // messageLog.push(`${message.member.nickname || message.author.username} - ${message.editedAt?message.editedAt.toISOString():message.createdAt.toISOString()}\n`+
-                    //         `${message.cleanContent}\n${JSON.stringify(message.embeds)}`);
-                });
-                // console.log(messageLog.reverse());
+            if (!fullCommand.recursed) ephemeral(null, fullCommand);
+            channel.messages.fetch({ 'limit': 5 }).then(messages => {
+                Promise.all(messages.map(message => message.delete())).then(() => {
+                    if (messages.size) processCommand(command, Object.assign({ 'recursed': true }, fullCommand));
+                }).catch(console.log);
             });
             break;
         case 'role':
@@ -628,8 +645,57 @@ CLIENT.on('message', message => {
     }
 });
 
+function manageRules(guildId, channelId, messageId) {
+    CLIENT.guilds.fetch(guildId).then(guild => {
+        guild.channels.resolve(channelId).messages.fetch(messageId).then(message => {
+            rulesMsg = message;
+            const rulesListener = message.createReactionCollector(() => true, { 'dispose': true });
+            console.log(`Rules ready!`);
+            if (!message.reactions.cache.get('🦔')) message.react('🦔');
+            else message.reactions.cache.get('🦔').users.fetch(CLIENT.user.id).then(users => {
+                if (!users.get(CLIENT.user.id)) message.react('🦔');//:lpd:816223082728783902
+            });
+            rulesListener.on('collect', (r, u) => {
+                if (!u.bot) r.users.remove(u.id);
+                const hash = Buffer.from(r.emoji.name.toString()).toString('hex');
+                if (hash === 'f09fa694' || hash === '6c7064') {
+                    guild.members.fetch(u.id).then(member => {
+                        // if (member.roles.cache.has(GENERAL)) return;
+                        if (u.bot) return;
+                        console.log(`Rules (accept): ${u.username}`);
+                        guild.channels.resolve('822343177104261160').send(`<@${u.id}> has accepted the rules.`);
+                        u.createDM().then(channel => {
+                            channel.send('Thank you for agreeing to our rules.\n\nPlease consider donating to the Libertarian Party of Delaware.  '+
+                                    'We rely on donors donors like you to fund all of our activities.\n\nThank you for your support!',
+                                    new DISCORD.MessageEmbed().setTitle('Donate to the LPD').setURL('https://www.lpdelaware.org/p/donate.html')
+                                            .setDescription(`The State Board has currently established funds for:\n`+
+                                                    `- The 2021 Convention\n`+
+                                                    `- The Social Media and Marketing Committee\n`+
+                                                    `- Hosting the [LPD Activism Application](https://app.lpdelaware.org) on Google Cloud Hosting\n`+
+                                                    `All other donations go to the general fund to be spent at the discretion of the LPD State Board `+
+                                                    `on everything from fundraising events to outreach to candidate support.`));
+                        });
+                        member.roles.add(GENERAL);
+                        member.roles.remove('815635833725517836');
+                    });
+                };
+            });
+        });
+    });
+}
+
+CLIENT.on('guildMemberAdd', member => {
+    member.roles.add('815635833725517836');
+    member.createDM().then(channel => {
+        channel.send(`Please accept the rules in the <#814614335744639058> channel by petting the :hedgehog: to access the rest of the LPD Discord Server.`);
+    });
+});
+
 CLIENT.once('ready', () => {
     CLIENT.user.setActivity('for /lpd help', { 'type': 3 });
+
+    manageRules('814614335229263945', '814614335744639058', '822355947275943936');
+
     voteData.forEach((vote, idx) => {
         CLIENT.guilds.fetch(vote.guild).then(guild => {
             guild.channels.cache.get(vote.channel)
