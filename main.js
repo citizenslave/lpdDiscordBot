@@ -2,7 +2,7 @@
 
 const DISCORD = require('discord.js');
 
-const PERSISTENCE = require('./VotePersistenceEngine');
+const FilePersistanceEngine = require('./FilePersistenceEngine');
 const DISCORD_CREDS = require('./discord_creds');
 
 const CLIENT = new DISCORD.Client();
@@ -99,9 +99,11 @@ const OBSERVER_VOICE_PERMS = DISCORD_PERMS.VIEW_CHANNEL | DISCORD_PERMS.CONNECT;
 const SPEAKER_VOICE_PERMS = OBSERVER_VOICE_PERMS | DISCORD_PERMS.SPEAK | DISCORD_PERMS.USE_VAD | DISCORD_PERMS.STREAM;
 
 let voteId = 0;
-const voteData = PERSISTENCE.readFile();
+const VOTE_PERSISTANCE = new FilePersistanceEngine('./voteData.json');
+const voteData = VOTE_PERSISTANCE.readFile();
 
-let rulesMsg;
+const RULE_PERSISTANCE = new FilePersistanceEngine('./ruleData.json');
+const ruleData = RULE_PERSISTANCE.readFile();
 
 function processCommand(command, fullCommand) {
     console.log(command);
@@ -141,8 +143,10 @@ function processCommand(command, fullCommand) {
             ephemeral(null, fullCommand);
             const rulesEmbed = new DISCORD.MessageEmbed().setDescription(RULES).setTitle('LPD Server Rules');
             channel.send(rulesEmbed).then(message => {
-                manageRules('814614335229263945', '814614335744639058', message.id);
-                console.log(`New rules message: ${message.id}`);
+                while (ruleData.length) ruleData.pop();
+                ruleData.push({ 'guildId': guild.id, 'channelId': channel.id, 'messageId': message.id });
+                RULE_PERSISTANCE.writeFile(ruleData);
+                manageRules(ruleData[0].guildId, ruleData[0].channelId, ruleData[0].messageId);
             });
             break;
         case 'list':
@@ -409,7 +413,7 @@ function processCommand(command, fullCommand) {
                         'votes': []
                     };
                     voteData.push(voteDetails);
-                    PERSISTENCE.writeFile(voteData);
+                    VOTE_PERSISTANCE.writeFile(voteData);
                     message.react('👍');
                     message.react('🚫');
                     message.react('👎');
@@ -418,6 +422,9 @@ function processCommand(command, fullCommand) {
                     message.react('❌');
 
                     message.pin();
+                    setTimeout(() => {
+                        if (channel.lastMessage.system) channel.lastMessage.delete({ 'timeout': 1000 });
+                    }, 5000);
 
                     registerListener(message, voteDetails);
                 });
@@ -440,7 +447,7 @@ function displayPoll(voteDetails) {
                 const embed = new DISCORD.MessageEmbed(message.embeds[0]);
                 channel.send(message.content, embed).then(freshMsg => {
                     voteDetails.message = freshMsg.id;
-                    PERSISTENCE.writeFile(voteData);
+                    VOTE_PERSISTANCE.writeFile(voteData);
                     freshMsg.react('👍');
                     freshMsg.react('🚫');
                     freshMsg.react('👎');
@@ -466,7 +473,7 @@ function displayPoll(voteDetails) {
                 // console.log(roleMentions, embed)
                 channel.send(`Poll for ${roleMentions}`, embed).then(freshMsg => {
                     voteDetails.message = freshMsg.id;
-                    PERSISTENCE.writeFile(voteData);
+                    VOTE_PERSISTANCE.writeFile(voteData);
                     freshMsg.react('👍');
                     freshMsg.react('🚫');
                     freshMsg.react('👎');
@@ -498,7 +505,7 @@ function registerListener(message, voteDetails) {
 
         r.users.remove(u);
         guild.members.fetch().then(members => {
-            const eligibleRoles = new DISCORD.Collection(voteDetails.map(r => [r, null]));
+            const eligibleRoles = new DISCORD.Collection(voteDetails.roles.map(r => [r, null]));
             const eligibleIds = members.filter(i => i.roles.cache.intersect(eligibleRoles).size).map(i => i.id)
             const member = members.get(u.id);
             if (!eligibleIds.includes(u.id)) return;
@@ -524,11 +531,11 @@ function registerListener(message, voteDetails) {
                     reactions.stop();
                     r.message.delete();
                     voteData.filter((vote, idx) => vote.voteId !== voteDetails.voteId || voteData.splice(idx, 1));
-                    PERSISTENCE.writeFile(voteData);
+                    VOTE_PERSISTANCE.writeFile(voteData);
                 } else if (voteHash === 'e29d94') {
                     const voteMsg = voteDetails.votes.map(vote => {
                         return `<@!${vote.user}> - ${vote.vote}`;
-                    }).join('\n');
+                    }).join('\n') + '\n' + eligibleIds.filter(id => !voteDetails.votes.map(v => v.user).includes(id)).map(id => `<@!${id}> - Awaiting Vote`).join('\n');
                     const infoMsg = {
                         'data': {
                             'content': `Vote Results (as of ${new Date().toLocaleString()}):\n${voteDetails.question}\n${voteMsg}`,
@@ -558,7 +565,7 @@ function registerListener(message, voteDetails) {
                 votes[currentVote[0].voteHash]--;
                 votes[voteHash]++;
             }
-            PERSISTENCE.writeFile(voteData);
+            VOTE_PERSISTANCE.writeFile(voteData);
             const voteUpdate = `:+1: - Aye - ${votes['f09f918d']} votes in favor\n`+
                     `:no_entry_sign: - Abstain - ${votes['f09f9aab']} abstentions\n`+
                     `:-1: - Nay - ${votes['f09f918e']} votes against`;
@@ -649,7 +656,6 @@ function manageRules(guildId, channelId, messageId) {
     return new Promise((resolve, reject) => {
         CLIENT.guilds.fetch(guildId).then(guild => {
             guild.channels.resolve(channelId).messages.fetch(messageId).then(message => {
-                rulesMsg = message;
                 const rulesListener = message.createReactionCollector(() => true, { 'dispose': true });
                 if (!message.reactions.cache.get('🦔')) message.react('🦔');
                 else message.reactions.cache.get('🦔').users.fetch(CLIENT.user.id).then(users => {
@@ -708,7 +714,9 @@ CLIENT.once('ready', () => {
         });
     });
 
-    manageRules('814614335229263945', '814614335744639058', '822355947275943936').then(() => {;
+    if (!ruleData.length) console.log(`No rules message configured.\nLPD Bot Online.`);
+    else manageRules(ruleData[0].guildId, ruleData[0].channelId, ruleData[0].messageId).then(() => {
+    // manageRules('814614335229263945', '814614335744639058', '822355947275943936').then(() => {
         console.log('LPD Bot Online.');
     });
 });
