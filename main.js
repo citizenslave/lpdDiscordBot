@@ -646,42 +646,42 @@ CLIENT.on('message', message => {
 });
 
 function manageRules(guildId, channelId, messageId) {
-    CLIENT.guilds.fetch(guildId).then(guild => {
-        guild.channels.resolve(channelId).messages.fetch(messageId).then(message => {
-            rulesMsg = message;
-            const rulesListener = message.createReactionCollector(() => true, { 'dispose': true });
-            console.log(`Rules ready!`);
-            if (!message.reactions.cache.get('🦔')) message.react('🦔');
-            else message.reactions.cache.get('🦔').users.fetch(CLIENT.user.id).then(users => {
-                if (!users.get(CLIENT.user.id)) message.react('🦔');
-            });
-            rulesListener.on('collect', (r, u) => {
-                if (!u.bot) r.users.remove(u.id);
-                const hash = Buffer.from(r.emoji.name.toString()).toString('hex');
-                if (hash === 'f09fa694' || hash === '6c7064') {
-                    guild.members.fetch(u.id).then(member => {
-                        if (member.roles.cache.has(GENERAL)) return;
-                        if (u.bot) return;
-                        console.log(`Rules (accept): ${u.username}`);
-                        guild.channels.resolve('822343177104261160').send(`<@${u.id}> has accepted the rules.`);
-                        u.createDM().then(channel => {
-                            channel.send('Thank you for agreeing to our rules.\n\nPlease consider donating to the Libertarian Party of Delaware.  '+
-                                    'We rely on donors donors like you to fund all of our activities.\n\nThank you for your support!',
-                                    new DISCORD.MessageEmbed().setTitle('Donate to the LPD').setURL('https://www.lpdelaware.org/p/donate.html')
-                                            .setDescription(`The State Board has currently established funds for:\n`+
-                                                    ` • The 2021 Convention\n`+
-                                                    ` • The Social Media and Marketing Committee\n`+
-                                                    ` • Hosting the [LPD Activism Application](https://app.lpdelaware.org) on Google Cloud Hosting\n`+
-                                                    `All other donations go to the general fund to be spent at the discretion of the LPD State Board `+
-                                                    `on everything from fundraising events to outreach to candidate support.`));
+    return new Promise((resolve, reject) => {
+        CLIENT.guilds.fetch(guildId).then(guild => {
+            guild.channels.resolve(channelId).messages.fetch(messageId).then(message => {
+                rulesMsg = message;
+                const rulesListener = message.createReactionCollector(() => true, { 'dispose': true });
+                if (!message.reactions.cache.get('🦔')) message.react('🦔');
+                else message.reactions.cache.get('🦔').users.fetch(CLIENT.user.id).then(users => {
+                    if (!users.get(CLIENT.user.id)) message.react('🦔');
+                });
+                rulesListener.on('collect', (r, u) => {
+                    if (!u.bot) r.users.remove(u.id);
+                    const hash = Buffer.from(r.emoji.name.toString()).toString('hex');
+                    if (hash === 'f09fa694' || hash === '6c7064') {
+                        guild.members.fetch(u.id).then(member => {
+                            if (member.roles.cache.has(GENERAL)) return;
+                            if (u.bot) return;
+                            console.log(`Rules (accept): ${u.username}`);
+                            guild.channels.resolve('822343177104261160').send(`<@${u.id}> has accepted the rules.`);
+                            u.createDM().then(channel => {
+                                channel.send('Thank you for agreeing to our rules.\n\nPlease consider donating to the Libertarian Party of Delaware.  '+
+                                        'We rely on donors donors like you to fund all of our activities.\n\nThank you for your support!',
+                                        new DISCORD.MessageEmbed().setTitle('Donate to the LPD').setURL('https://www.lpdelaware.org/p/donate.html')
+                                                .setDescription(`The State Board has currently established funds for:\n`+
+                                                        ` • The 2021 Convention\n`+
+                                                        ` • The Social Media and Marketing Committee\n`+
+                                                        ` • Hosting the [LPD Activism Application](https://app.lpdelaware.org) on Google Cloud Hosting\n`+
+                                                        `All other donations go to the general fund to be spent at the discretion of the LPD State Board `+
+                                                        `on everything from fundraising events to outreach to candidate support.`));
+                            });
+                            member.roles.add(GENERAL);
+                            member.roles.remove('815635833725517836');
                         });
-                        member.roles.add(GENERAL);
-                        member.roles.remove('815635833725517836');
-                    });
-                };
-            });
-        }, e => {
-            console.log(`Rules message not found!`);
+                    };
+                });
+                resolve();
+            }, e => reject);
         });
     });
 }
@@ -696,8 +696,6 @@ CLIENT.on('guildMemberAdd', member => {
 CLIENT.once('ready', () => {
     CLIENT.user.setActivity('for /lpd help', { 'type': 3 });
 
-    manageRules('814614335229263945', '814614335744639058', '822355947275943936');
-
     voteData.forEach((vote, idx) => {
         CLIENT.guilds.fetch(vote.guild).then(guild => {
             guild.channels.cache.get(vote.channel)
@@ -709,7 +707,10 @@ CLIENT.once('ready', () => {
             });
         });
     });
-    console.log('LPD Bot Online.');
+
+    manageRules('814614335229263945', '814614335744639058', '822355947275943936').then(() => {;
+        console.log('LPD Bot Online.');
+    });
 });
 
 CLIENT.login(DISCORD_CREDS);
