@@ -29,9 +29,9 @@ const HELP_TEXT = [`Anyone can run this command:`,``,`\`/lpd poll Is this how I 
         `become a State Board Guest.  It will not remove them by running it again.`,``,
         `\`/lpd role @State Board Guests clear\``,
         `This will clear everyone out of a temporary role.`,``,
-        `\`/lpd role #2021-convention-session @Convention Committee\``,
+        `\`/lpd role #2021-convention-session @Convention Committee [advisor]\``,
         `This command gives an entire role full access to a channel.  Running it again removes them.  It will not work if that `+
-        `role has less than full access to the channel already.`,``,
+        `role has less than full access to the channel already.  The optional \`advisor\` parameter allows everything but voting in polls.`,``,
         `\`/lpd role #2021-convention-session @Also Will McVay\``,
         `This command gives a single user full access to a channel.  Running it again removes them.`,``,
         `\`/lpd role #2021-convention-session clear\``,
@@ -180,6 +180,21 @@ function processCommand(command, fullCommand) {
             // const pvtChan = guild.channels.cache.filter(c => c.name === 'Private Meeting Room').first();
             // console.log(pvtChan.permissionOverwrites.get('814623899156217936').allow.bitfield, SPEAKER_VOICE_PERMS);
             // console.log(guild.channels.cache.map(c => `${c.name}: ${c.id}`));
+            // const testRoleFlags = DISCORD.Permissions.FLAGS;
+            // const testPermittedRoles = [];
+            // guild.roles.fetch().then(roles => {
+            //     roles.cache.forEach(role => {
+            //         const bitfield = BigInt(channel.permissionsFor(role.id).bitfield);
+            //         const reqdPerms = (testRoleFlags.SEND_MESSAGES | testRoleFlags.VIEW_CHANNEL & ~testRoleFlags.ADMINISTRATOR);
+            //         if ((bitfield & reqdPerms) === reqdPerms)
+            //         testPermittedRoles.push(role);
+            //     });
+            //     const filteredRoles = testPermittedRoles.filter(role => !BOT_ROLES.includes(role.id) && (channel.parent.id !== EXEC_SESSION_CAT || role.id === STATE_BOARD));
+            //     // if (!filteredRoles.filter(role => rolesCache.has(role))) return ephemeral('No permission.', fullCommand);
+            //     // else ephemeral(null, fullCommand);
+            //     const roleMentions = filteredRoles.map(role => `${role.name}`).join('\n');
+            //     console.log(roleMentions);
+            // });
             break;
         case 'clear':
             if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
@@ -236,7 +251,8 @@ function processCommand(command, fullCommand) {
                 const argChannel = guild.channels.cache.get(roleChannel);
                 const currentOverwrites = argChannel.permissionOverwrites;
                 if (currentOverwrites.has(channelRole)) {
-                    if ((BigInt(currentOverwrites.get(channelRole).allow.bitfield) | DISCORD_PERMS.SLASH_COMMANDS) === PARTICIPANT_PERMS) {
+                    const currentBitField = BigInt(currentOverwrites.get(channelRole).allow.bitfield) | DISCORD_PERMS.SLASH_COMMANDS;
+                    if ((currentBitField === PARTICIPANT_PERMS) || (currentBitField === (PARTICIPANT_PERMS & ~DISCORD_PERMS.VIEW_CHANNEL))) {
                         ephemeral('Remove permissions from channel.', fullCommand);
                         currentOverwrites.delete(channelRole);
                         argChannel.overwritePermissions(currentOverwrites);
@@ -244,9 +260,10 @@ function processCommand(command, fullCommand) {
                         ephemeral('Different permissions already assigned.', fullCommand);
                     }
                 } else {
-                    ephemeral('Assign participant permissions to channel.', fullCommand);
+                    ephemeral(`Assign ${args[1] === 'advisor'?'advisor':'participant'} permissions to channel.`, fullCommand);
+                    const newBitfield = args[1] === 'advisor'?PARTICIPANT_PERMS&~DISCORD_PERMS.VIEW_CHANNEL:PARTICIPANT_PERMS
                     currentOverwrites.set(channelRole,
-                            new DISCORD.PermissionOverwrites(argChannel, { 'id': channelRole, 'allow': PARTICIPANT_PERMS, 'type': 'role' }));
+                            new DISCORD.PermissionOverwrites(argChannel, { 'id': channelRole, 'allow': newBitfield, 'type': 'role' }));
                     argChannel.overwritePermissions(currentOverwrites);
                 }
             } else if (userToChannel) {
@@ -393,10 +410,11 @@ function processCommand(command, fullCommand) {
             guild.roles.fetch().then(roles => {
                 roles.cache.forEach(role => {
                     const bitfield = BigInt(channel.permissionsFor(role.id).bitfield);
-                    if ((bitfield & roleFlags.SEND_MESSAGES) && (bitfield & roleFlags.VIEW_CHANNEL) && !(bitfield & roleFlags.ADMINISTRATOR))
+                    const reqdPerms = (roleFlags.SEND_MESSAGES | roleFlags.VIEW_CHANNEL & ~roleFlags.ADMINISTRATOR);
+                    if ((bitfield & reqdPerms) === reqdPerms)
                         permittedRoles.push(role);
                 });
-                const filteredRoles = permittedRoles.filter(role => !BOT_ROLES.includes(role.id));
+                const filteredRoles = permittedRoles.filter(role => !BOT_ROLES.includes(role.id) && (channel.parent.id !== EXEC_SESSION_CAT || role.id === STATE_BOARD));
                 if (!filteredRoles.filter(role => rolesCache.has(role))) return ephemeral('No permission.', fullCommand);
                 else ephemeral(null, fullCommand);
                 const roleMentions = filteredRoles.map(role => `<@&${role.id}>`).join(', ');
