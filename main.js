@@ -689,7 +689,6 @@ CLIENT.once('ready', () => {
 
     if (!ruleData.length) console.log(`No rules message configured.\nLPD Bot Online.`);
     else manageRules(ruleData[0].guildId, ruleData[0].channelId, ruleData[0].messageId).then(() => {
-    // manageRules('814614335229263945', '814614335744639058', '822355947275943936').then(() => {
         console.log('LPD Bot Online.');
     });
 });
