@@ -1,0 +1,125 @@
+'use strict';
+
+import DISCORD from 'discord.js';
+
+import BaseCommand from '../baseCommand.js';
+
+import ROLES from '../../constants/roles.js';
+import PERMS from '../../constants/permissions.js';
+
+const TEMP_ROLES = [
+    ROLES.SB_GUESTS
+];
+
+export default class RoleCommand extends BaseCommand {
+    execute(params) {
+        if (params[1] && params[5]) {
+            this.copyRole(params[1], params[5]);
+        } else if (params[1] && params[4]) {
+            this.assignUserToRole(params[1], params[4]);
+        } else if (params[1] && params[3]) {
+            this.roleAction(params[1], params[3]);
+        } else if (params[2] && params[5]) {
+            this.assignRoleToChannel(params[2], params[5], params[6]);
+        } else if (params[2] && params[4]) {
+            this.assignUserToChannel(params[2], params[4], params[6]);
+        } else if (params[2] && params[3]) {
+            this.channelAction(params[2], params[3]);
+        }
+    }
+
+    copyRole(dstRole, srcRole) {
+        if ((!this.member.roles.includes(ROLES.STATE_BOARD) || !TEMP_ROLES.includes(dstRole)) &&
+            !this.member.roles.includes(ROLES.ADMIN)) return this.ephemeral('No permission.');
+        this.ephemeral(null, true);
+        this.guild.members.fetch().then(members => {
+            const membersAdded = [];
+            members.forEach(member => {
+                if (member.roles.cache.has(srcRole) && !member.roles.cache.has(dstRole)) {
+                    member.roles.add(dstRole);
+                    membersAdded.push(member.nickname || member.user.username);
+                }
+            });
+            const response = `Added members:\n${membersAdded.join('\n')}`;
+            this.ephemeral(response, true);
+        });
+    }
+
+    assignUserToRole(role, user) {
+        if ((!this.member.roles.includes(ROLES.STATE_BOARD) || !TEMP_ROLES.includes(role)) &&
+            !this.member.roles.includes(ROLES.ADMIN)) return this.ephemeral('No permission.');
+        this.ephemeral(null, true);
+        this.guild.members.fetch(user).then(member => {
+            if (member.roles.cache.has(role)) {
+                member.roles.remove(role);
+                this.ephemeral('User role revoked', true);
+            } else {
+                member.roles.add(role);
+                this.ephemeral('User role granted', true);
+            }
+        });
+    }
+
+    assignRoleToChannel(channel, role, capacity) {
+        const argChannel = this.guild.channels.cache.get(channel);
+        const currentOverwrites = argChannel.permissionOverwrites;
+        if (currentOverwrites.has(role)) {
+            const currentBitField = BigInt(currentOverwrites.get(role).allow.bitfield) | PERMS.DISCORD_PERMS.SLASH_COMMANDS;
+            if ((currentBitField === PERMS.PARTICIPANT_PERMS) || (currentBitField === PERMS.ADVISOR_PERMS) || capacity === 'force') {
+                currentOverwrites.delete(role);
+                argChannel.overwritePermissions(currentOverwrites);
+                this.ephemeral('Removed role permissions from channel.');
+            } else {
+                this.ephemeral('Different role permissions already assigned to channel.  Use `force` to remove.');
+            }
+        } else {
+            const newBitfield = capacity === 'advisor'?PERMS.ADVISOR_PERMS:PERMS.PARTICIPANT_PERMS
+            currentOverwrites.set(role, new DISCORD.PermissionOverwrites(argChannel, { 'id': role, 'allow': newBitfield, 'type': 'role' }));
+            argChannel.overwritePermissions(currentOverwrites);
+            this.ephemeral(`Assign ${capacity === 'advisor'?'advisor':'participant'} permissions to channel.`);
+        }
+    }
+
+    assignUserToChannel(channel, user) {
+        const userChannel = this.guild.channels.cache.get(channel);
+        if (userChannel.permissionOverwrites.has(user)) {
+            userChannel.overwritePermissions(userChannel.permissionOverwrites.filter(o => o.id !== user));
+            this.ephemeral('Removed user from channel.');
+        } else {
+            userChannel.overwritePermissions(userChannel.permissionOverwrites.set(user,
+                    new DISCORD.PermissionOverwrites(userChannel, { 'id': user, 'allow': PERMS.PARTICIPANT_PERMS, 'type': 'member' })));
+            this.ephemeral('Added user to channel.');
+        }
+    }
+
+    channelAction(channel, action) {
+        const actionChannel = this.guild.channels.cache.get(channel);
+        if (action === 'clear') {
+            actionChannel.overwritePermissions(actionChannel.permissionOverwrites.filter(o => o.type !== 'member'));
+            this.ephemeral('Cleared user overwrites in channel.');
+        } else if (action === 'list') {
+            this.ephemeral(`Not implemented.`)
+        }
+    }
+
+    roleAction(role, action) {
+        if ((!this.member.roles.includes(ROLES.STATE_BOARD) || !TEMP_ROLES.includes(role)) &&
+            !this.member.roles.includes(ROLES.ADMIN)) return this.ephemeral('No permission.');
+        this.ephemeral(null, true);
+        if (action === 'clear') {
+            console.log(role, TEMP_ROLES)
+            if (!TEMP_ROLES.includes(role)) return this.ephemeral('Not a temp role.', true);
+            this.guild.members.fetch().then(members => {
+                members.forEach(member => {
+                    if (member.roles.cache.has(role)) member.roles.remove(role);
+                });
+                return this.ephemeral('Cleared role.', true);
+            });
+        } else if (action === 'list') {
+            this.guild.members.fetch().then(members => {
+                const list = members.filter(m => m.roles.cache.has(role)).map(m => m.nickname || m.user.username).join('\n');
+                return this.ephemeral(`Members with role <@&${role}>:\n${list}`, true);
+            });
+        }
+    }
+}

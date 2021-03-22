@@ -1,11 +1,12 @@
 'use strict';
 
-const FS = require('fs');
+import FS from 'fs';
 
 class FilePersistenceEngine {
     filename;
 
     constructor(filename) {
+        if (!filename.endsWith('.json')) filename += '.json';
         this.filename = filename;
     }
 
@@ -19,4 +20,4 @@ class FilePersistenceEngine {
     }
 }
 
-module.exports = FilePersistenceEngine;
+export default FilePersistenceEngine;

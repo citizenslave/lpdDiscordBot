@@ -1,560 +1,46 @@
 'use strict';
 
-const DISCORD = require('discord.js');
+import CRYPTO from 'crypto';
+import DISCORD from 'discord.js';
+import HTTPS from 'https';
 
-const FilePersistanceEngine = require('./FilePersistenceEngine');
-const DISCORD_CREDS = require('./discord_creds');
+import UTILS from './utils/utils.js';
+
+import DISCORD_UTILS from './utils/discord-utils.js';
+import COMMAND_MAPPER from './command-controller/commandMapper.js';
+
+import BaseCommand from './command-controller/baseCommand.js';
+import RulesCommand from './command-controller/commands/rules.js';
+
+import CREDS from './constants/creds.js';
+import ROLES from './constants/roles.js';
+import CHANS from './constants/channels.js';
+import PERMS from './constants/permissions.js';
+
+import DONATION_EMBED from './constants/donations.js';
+
+import FilePersistanceEngine from './utils/FilePersistenceEngine.js';
+import SeenCommand from './command-controller/commands/seen.js';
+import QuorumCommand from './command-controller/commands/quorum.js';
+import PollCommand from './command-controller/commands/poll.js';
+import BallotCommand from './command-controller/commands/ballot.js';
+
+const VOTE_PERSISTANCE = new FilePersistanceEngine('./data/storage/ballotData');
+const voteData = VOTE_PERSISTANCE.readFile();
 
 const CLIENT = new DISCORD.Client();
 
-const HELP_TEXT = [`Anyone can run this command:`,``,`\`/lpd poll [url:[link text](link)] Is this how I make a poll?\``,
-    `This command will generate a poll that is open to anyone with full access `+
-    `to the channel it's created in, offering three voting options (Yes, Abstain, `+
-    `No) and buttons to view the current vote state, move the poll to the end of the `+
-    `channel, or close the poll.`,``,
-    `These commands can only be run by the State Board:`,``,
-    `\`/lpd exec Executive Session Name\``,
-    `This command will create a new executive session channel under the "Executive Sessions" `+
-    `channel category.  By default, it will only be accessible to the State Board and no other `+
-    `users will know of its existence.`,``,
-    `\`/lpd lock #test-session\``,
-    `This command will lock an executive session so it becomes read-only to those who already have access to it.`,``,
-    `\`/lpd release #test-session\``,
-    `This command releases the session to all users for viewing.`,``,
-    `\`/lpd role @State Board Guests @Also Will McVay\``,
-    `This command can add a user to a "temporary role" (which currently just includes the <@&821788308912078858> role).  `+
-    `Running it again removes them.`,``,
-    `\`/lpd role @State Board Guests @Convention Committee\``,
-    `This command adds everyone in the second role to the temporary role, ie everyone on the Convention Committee would `+
-    `become a State Board Guest.  It will not remove them by running it again.`,``,
-    `\`/lpd role @State Board Guests clear\``,
-    `This will clear everyone out of a temporary role.`,``,
-    `\`/lpd role #2021-convention-session @Convention Committee [advisor]\``,
-    `This command gives an entire role full access to a channel.  Running it again removes them.  It will not work if that `+
-    `role has less than full access to the channel already.  The optional \`advisor\` parameter allows everything but voting in polls.`,``,
-    `\`/lpd role #2021-convention-session @Also Will McVay\``,
-    `This command gives a single user full access to a channel.  Running it again removes them.`,``,
-    `\`/lpd role #2021-convention-session clear\``,
-    `This command removes all users granted individual access to a channel.`
-];
-const RULES = `1. No commercial spam. This is a political party server. We are not here shopping except for candidates `+
-        `and political campaign items.\n`+
-        `2. Be respectful. We are all either Libertarians or guests looking to learn more about the Libertarian Party. Your `+
-        `behavior on this server reflects on the party. Behave accordingly. Also, this is a volunteer organization. Volunteers `+
-        `have a choice how they spend their time and spending their time helping us merits gratitude, not disrespect.\n`+
-        `3. Read the room. Do not post the same thing over and over again if it is clear no one is interested. This is not your `+
-        `server for your own personal crusades, it is for coordinating action and educating the public for the LP.\n`+
-        `4. Honesty. We try to share accurate information here and hold ourselves to a higher standard of truthfulness and transparency.\n`+
-        `5. Use your real name if you need permissions granted for any particular channel or purpose to aid in verifying your identity.\n\n`+
-
-        `Please pet the :hedgehog: to accept these rules and access the rest of the server.`;
-const LPD_LINKS = [`State Links: 
-    http://lpdelaware.org/
-    https://www.facebook.com/LPDel/
-    https://www.facebook.com/groups/lpdFB/
-    https://discord.gg/j5nRAFZEuZ`,
-
-    `Articles of Association:
-    https://www.lpdelaware.org/p/revised-articles-of-association.html
-
-    LPD Activism App:
-    https://app.lpdelaware.org/
-
-    New Castle County Links:
-    https://www.newcastlecountylp.com/
-    https://www.facebook.com/ncclpde/
-
-    Articles of Association:
-    https://bit.ly/2NSylEb
-
-    Kent County Links:
-    https://www.facebook.com/kcdelp/
-
-    Sussex County Links:
-    https://www.facebook.com/sussexlp/`];
-
 const SEAN = '814892496139190322';
 const WILL = '814614126298529843';
-const ADMIN = '815639397860769813';
 
-const EXEC_SESSION_CAT = '821750119719895091';
-const EXEC_ARCH_CAT = '821809580001591387';
-const PRIVATE_CAT = '817403192954322945';
-
-const STATE_CHAIR = '815592628375650354';
-const STATE_BOARD = '814623899156217936';
-const GENERAL = '815636524296962089';
-const BOT_ROLES = [
-    '816086519898308657', // LPD Bot
-    STATE_CHAIR  // State Chair
-];
-const TEMP_ROLES = [
-    '820727133860659261' // State Board Guests
+const BOT_ROLES = [ // Ignored by polls
+    ROLES.LPD_BOT,        // LPD Bot
+    ROLES.STATE_CHAIR     // State Chair
 ];
 
-const DISCORD_PERMS = DISCORD.Permissions.FLAGS;
-const SPECTATOR_PERMS = DISCORD_PERMS.VIEW_CHANNEL | DISCORD_PERMS.READ_MESSAGE_HISTORY;
-const PARTICIPANT_PERMS = SPECTATOR_PERMS | DISCORD_PERMS.SEND_MESSAGES | DISCORD_PERMS.ADD_REACTIONS | DISCORD_PERMS.MENTION_EVERYONE |
-        DISCORD_PERMS.ATTACH_FILES | DISCORD_PERMS.EMBED_LINKS | DISCORD_PERMS.USE_EXTERNAL_EMOJIS | DISCORD_PERMS.SLASH_COMMANDS;
-const OBSERVER_VOICE_PERMS = DISCORD_PERMS.VIEW_CHANNEL | DISCORD_PERMS.CONNECT;
-const SPEAKER_VOICE_PERMS = OBSERVER_VOICE_PERMS | DISCORD_PERMS.SPEAK | DISCORD_PERMS.USE_VAD | DISCORD_PERMS.STREAM;
-
+const selections = [ '🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯', '🇰', '🇱', '🇲', '🇳', '🇴', '🇵', '🇶', '🇷', '🇸', '🇹', '🇺', '🇻', '🇼', '🇽', '🇾', '🇿' ];
+const instructions = `:grey_question: - Show current votes\n<:whip:830972517598494740> - Whip outstanding votes\n:arrows_counterclockwise: - Move poll to bottom\n:x: - Delete poll (DON'T)`;
 let voteId = 0;
-const VOTE_PERSISTANCE = new FilePersistanceEngine('./voteData.json');
-const voteData = VOTE_PERSISTANCE.readFile();
-const voteMap = { 'f09f918d': 'aye', 'f09f9aab': 'abstain', 'f09f918e': 'nay' };
-const responses = `:+1: - Aye - 0 votes in favor\n:no_entry_sign: - Abstain - 0 abstentions\n:-1: - Nay - 0 votes against`;
-const instructions = `:grey_question: - Show current votes\n:arrows_counterclockwise: - Move poll to bottom\n:x: - Delete poll (DON'T)`;
-
-const RULE_PERSISTANCE = new FilePersistanceEngine('./ruleData.json');
-const ruleData = RULE_PERSISTANCE.readFile();
-
-function processCommand(command, fullCommand) {
-    console.log(command);
-    let channel, rolesCache, guild;
-
-    guild = CLIENT.guilds.cache.get(fullCommand.guild_id);
-    channel = guild.channels.cache.get(fullCommand.channel_id);
-    rolesCache = guild.roles.cache;
-
-    const args = command.split(/ +/);
-    const cmd = args.shift().toLowerCase();
-    const content = command.slice(cmd.length+1);
-
-    switch (cmd) {
-        case 'ping':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            ephemeral('pong', fullCommand);
-            break;
-        case 'debug':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            ephemeral(null, fullCommand);
-            break;
-        case 'help':
-            if (!fullCommand.member.roles.includes(STATE_BOARD))
-                return ephemeral(HELP_TEXT.filter((v, idx) => idx < 5).join('\n'), fullCommand);
-            if (fullCommand.member.roles.includes(STATE_BOARD) && !content.length)
-                return ephemeral(HELP_TEXT.join('\n'), fullCommand);
-            switch (args[0]) {
-            case 'exec':
-            case 'lock':
-            case 'release':
-                return ephemeral(HELP_TEXT.filter((v, idx) => idx > 6 && idx < 15).join('\n'), fullCommand);
-            case 'role':
-                return ephemeral(HELP_TEXT.filter((v, idx) => idx > 15).join('\n'), fullCommand);
-            default:
-                return ephemeral(`Unrecognized command: ${content}`, fullCommand);
-            }
-        case 'rules':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            ephemeral(null, fullCommand);
-            const rulesEmbed = new DISCORD.MessageEmbed().setDescription(RULES).setTitle('LPD Server Rules');
-            channel.send(rulesEmbed).then(message => {
-                while (ruleData.length) ruleData.pop();
-                ruleData.push({ 'guildId': guild.id, 'channelId': channel.id, 'messageId': message.id });
-                RULE_PERSISTANCE.writeFile(ruleData);
-                manageRules(ruleData[0].guildId, ruleData[0].channelId, ruleData[0].messageId);
-            });
-            break;
-        case 'clear':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            if (!fullCommand.recursed) ephemeral(null, fullCommand);
-            channel.messages.fetch({ 'limit': 5 }).then(messages => {
-                Promise.all(messages.map(message => message.delete())).then(() => {
-                    if (messages.size) processCommand(command, Object.assign({ 'recursed': true }, fullCommand));
-                }).catch(console.log);
-            });
-            break;
-        case 'role':
-            const userToRole = args[0].match(/<@&(.+)><@!(.+)>/);
-            const copyToRole = args[0].match(/<@&(.+)><@&(.+)>/);
-            const roleToChannel = args[0].match(/<#(.+)><@&(.+)>/);
-            const userToChannel = args[0].match(/<#(.+)><@!(.*)>/);
-            const roleAction = args[0].match(/<@&(.+)>/);
-            const channelAction = args[0].match(/<#(.*)>/);
-
-            if (userToRole) {
-                const newRole = userToRole[1];
-                const userToAdd = userToRole[2];
-                if ((!fullCommand.member.roles.includes(STATE_BOARD) || !TEMP_ROLES.includes(newRole)) &&
-                    !fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-                guild.members.fetch(userToAdd).then(member => {
-                    if (member.roles.cache.has(newRole)) {
-                        member.roles.remove(newRole);
-                        ephemeral('User role revoked', fullCommand);
-                    } else {
-                        member.roles.add(newRole);
-                        ephemeral('User role granted', fullCommand);
-                    }
-                });
-            } else if (copyToRole) {
-                const srcRole = copyToRole[2];
-                const dstRole = copyToRole[1];
-                if ((!fullCommand.member.roles.includes(STATE_BOARD) || !TEMP_ROLES.includes(dstRole)) &&
-                    !fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-                guild.members.fetch().then(members => {
-                    const membersAdded = [];
-                    members.forEach(member => {
-                        if (member.roles.cache.has(srcRole) && !member.roles.cache.has(dstRole)) {
-                            member.roles.add(dstRole);
-                            membersAdded.push(member.nickname || member.user.username);
-                        }
-                    });
-                    const response = `Added members:\n${membersAdded.join('\n')}`;
-                    ephemeral(response, fullCommand);
-                });
-            } else if (roleToChannel) {
-                const roleChannel = roleToChannel[1];
-                const channelRole = roleToChannel[2];
-                if (!fullCommand.member.roles.includes(ADMIN) && !fullCommand.member.roles.includes(STATE_BOARD))
-                    return ephemeral('No permission.', fullCommand);
-                const argChannel = guild.channels.cache.get(roleChannel);
-                const currentOverwrites = argChannel.permissionOverwrites;
-                if (currentOverwrites.has(channelRole)) {
-                    const currentBitField = BigInt(currentOverwrites.get(channelRole).allow.bitfield) | DISCORD_PERMS.SLASH_COMMANDS;
-                    if ((currentBitField === PARTICIPANT_PERMS) || (currentBitField === (PARTICIPANT_PERMS & ~DISCORD_PERMS.VIEW_CHANNEL))) {
-                        ephemeral('Remove permissions from channel.', fullCommand);
-                        currentOverwrites.delete(channelRole);
-                        argChannel.overwritePermissions(currentOverwrites);
-                    } else {
-                        ephemeral('Different permissions already assigned.', fullCommand);
-                    }
-                } else {
-                    ephemeral(`Assign ${args[1] === 'advisor'?'advisor':'participant'} permissions to channel.`, fullCommand);
-                    const newBitfield = args[1] === 'advisor'?PARTICIPANT_PERMS&~DISCORD_PERMS.VIEW_CHANNEL:PARTICIPANT_PERMS
-                    currentOverwrites.set(channelRole,
-                            new DISCORD.PermissionOverwrites(argChannel, { 'id': channelRole, 'allow': newBitfield, 'type': 'role' }));
-                    argChannel.overwritePermissions(currentOverwrites);
-                }
-            } else if (userToChannel) {
-                if (!fullCommand.member.roles.includes(ADMIN) && !fullCommand.member.roles.includes(STATE_BOARD))
-                    return ephemeral('No permission.', fullCommand);
-                const userChannel = guild.channels.cache.get(userToChannel[1]);
-                if (userChannel.permissionOverwrites.has(userToChannel[2])) {
-                    userChannel.overwritePermissions(userChannel.permissionOverwrites.filter(o => o.id !== userToChannel[2]));
-                    ephemeral('Removing user from channel.', fullCommand);
-                } else {
-                    userChannel.overwritePermissions(userChannel.permissionOverwrites.set(userToChannel[2],
-                            new DISCORD.PermissionOverwrites(userChannel, { 'id': userToChannel[2], 'allow': PARTICIPANT_PERMS, 'type': 'member' })));
-                    ephemeral('Adding user to channel.', fullCommand);
-                }
-            } else if (roleAction) {
-                if ((!fullCommand.member.roles.includes(STATE_BOARD) || !TEMP_ROLES.includes(roleAction[1])) &&
-                    !fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-                guild.roles.fetch(roleAction[1]).then(role => {
-                    if (args[1] === 'clear') {
-                        if (!TEMP_ROLES.includes(roleAction[1])) return ephemeral('Not a temp role.', fullCommand);
-                        guild.members.fetch().then(members => {
-                            members.forEach(member => {
-                                if (member.roles.cache.has(role.id)) member.roles.remove(role.id);
-                            });
-                            return ephemeral('Cleared role.', fullCommand);
-                        });
-                    }
-                }, e => ephemeral('Invalid role.', fullCommand));
-            } else if (channelAction) {
-                if (!fullCommand.member.roles.includes(ADMIN) && !fullCommand.member.roles.includes(STATE_BOARD))
-                    return ephemeral('No permission.', fullCommand);
-                const actionChannel = guild.channels.cache.get(channelAction[1]);
-                if (args[1] === 'clear') {
-                    ephemeral('Cleared user overwrites in channel.', fullCommand);
-                    actionChannel.overwritePermissions(actionChannel.permissionOverwrites.filter(o => o.type !== 'member'));
-                }
-            } else {
-                ephemeral('Invalid parameters.', fullCommand);
-            }
-            break;
-        case 'sock':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            ephemeral(null, fullCommand);
-            let targetChannel;
-            let sockMsg = content;
-            if (args[0].startsWith('<#')) targetChannel = guild.channels.cache.get(args[0].match(/<#(.*)>/)[1]);
-            else targetChannel = guild.channels.cache.find(c => c.name === args[0]);
-            if (!targetChannel) targetChannel = channel;
-            else sockMsg = content.slice(args[0].length+1).trim();
-            targetChannel.send(sockMsg);
-            break;
-        case 'link':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            const adminChannel = guild.channels.cache.get('815634898055987290');
-            adminChannel.send(args[0]).then(tempMsg => {
-                let embed = new DISCORD.MessageEmbed(tempMsg.embeds[0]);
-                if (!embed.url) embed.url = args[0];
-                embed.setTitle(content.slice(args[0].length+1).trim() || embed.title);
-                channel.send(embed);
-                tempMsg.delete({ 'timeout': 5000 });
-                ephemeral(null, fullCommand);
-            });
-            break;
-        case 'links':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            channel.send(LPD_LINKS[0]);
-            channel.send(LPD_LINKS[1]);
-            ephemeral(null, fullCommand);
-            break;
-        case 'exec':
-            if (!fullCommand.member.roles.includes(STATE_BOARD)) return ephemeral('No permission.', fullCommand);
-            const execChannelName = content.replace(/ /, '-').toLowerCase();
-            ephemeral(`Creating Executive Session: ${execChannelName}`, fullCommand);
-            const execChannelOptions = {
-                'type': 'text',
-                'parent': EXEC_SESSION_CAT,
-                'permissionOverwrites': [{
-                    'id': STATE_BOARD,
-                    'type': 'role',
-                    'deny': 0n,
-                    'allow': PARTICIPANT_PERMS
-                }]
-            };
-            guild.channels.create(execChannelName, execChannelOptions);
-            break;
-        case 'lock':
-            if (!fullCommand.member.roles.includes(STATE_BOARD)) return ephemeral('No permission.', fullCommand);
-            const lockChannelId = args[0].match(/<#(.*)>/);
-            if (!lockChannelId) return ephemeral('Invalid channel.', fullCommand);
-            const lockChannel = guild.channels.cache.get(lockChannelId[1]);
-            ephemeral(`Locking channel: ${lockChannel.name}`, fullCommand);
-            lockChannel.overwritePermissions(lockChannel.permissionOverwrites.map(overwrite => {
-                return new DISCORD.PermissionOverwrites(lockChannel, { 'id': overwrite.id, 'allow': SPECTATOR_PERMS, 'type': overwrite.type });
-            }));
-            lockChannel.setParent(EXEC_ARCH_CAT, { 'lockPermissions': false });
-            lockChannel.send(`This channel was locked on ${new Date().toISOString()}.`);
-            break;
-        case 'release':
-            if (!fullCommand.member.roles.includes(STATE_BOARD)) return ephemeral('No permission.', fullCommand);
-            const releaseChannelId = args[0].match(/<#(.*)>/);
-            if (!releaseChannelId) return ephemeral('Invalid channel.', fullCommand);
-            const releaseChannel = guild.channels.cache.get(releaseChannelId[1]);
-            ephemeral(`Releasing channel: ${releaseChannel.name}`, fullCommand);
-            releaseChannel.overwritePermissions(releaseChannel.permissionOverwrites.set(GENERAL,
-                    new DISCORD.PermissionOverwrites(releaseChannel, { 'id': GENERAL, 'allow': SPECTATOR_PERMS, 'type': 'role' })));
-            releaseChannel.send(`This channel was released on ${new Date().toISOString()}.`);
-            break;
-        case 'channel':
-            if (!fullCommand.member.roles.includes(ADMIN)) return ephemeral('No permission.', fullCommand);
-            else ephemeral(null, fullCommand);
-            const channelName = args[0];
-            const roles = args[1].match(/<@&(.+)><@&(.+)>/);
-            const participantRole = roles[1];
-            const spectatorRole = roles[2];
-            const channelOptions = {
-                'type': 'text',
-                'parent': PRIVATE_CAT,
-                'permissionOverwrites': [{
-                    'id': participantRole,
-                    'type': 'role',
-                    'deny': 0n,
-                    'allow': PARTICIPANT_PERMS
-                }]
-            };
-            if (spectatorRole !== participantRole) channelOptions.permissionOverwrites.push({
-                'id': spectatorRole,
-                'type': 'role',
-                'deny': 0n,
-                'allow': SPECTATOR_PERMS
-            });
-            guild.channels.create(channelName, channelOptions);
-            break;
-        case 'poll':
-            if (!content) return ephemeral('No question provided.', fullCommand);
-            const permittedRoles = [];
-            const initDate = new Date();
-            const doneDate = new Date(initDate.getTime()+(48*60*60*1000));
-            let embed = new DISCORD.MessageEmbed().setTitle(content).setAuthor('Vote Called')
-                    .addField('React Below to Vote:', responses).addField('Instructions:', instructions)
-                    .setDescription(`Closes ${doneDate.toLocaleDateString()} @ ${doneDate.toLocaleTimeString(undefined, { 'timeZoneName': 'short' })}`);
-            if (args[0].startsWith('url:')) {
-                const pollArgs = content.match(/url:(\[.+\]\(.+\)) +(.+)/);
-                embed.setTitle(pollArgs[2]);
-                embed.setDescription(pollArgs[1]+'\n'+embed.description);
-            }
-            const roleFlags = DISCORD.Permissions.FLAGS;
-            guild.roles.fetch().then(roles => {
-                roles.cache.forEach(role => {
-                    const bitfield = BigInt(channel.permissionsFor(role.id).bitfield);
-                    const reqdPerms = (roleFlags.SEND_MESSAGES | roleFlags.VIEW_CHANNEL & ~roleFlags.ADMINISTRATOR);
-                    if ((bitfield & reqdPerms) === reqdPerms)
-                        permittedRoles.push(role);
-                });
-                const filteredRoles = permittedRoles.filter(role => !BOT_ROLES.includes(role.id) && (channel.parent.id !== EXEC_SESSION_CAT || role.id === STATE_BOARD));
-                if (!filteredRoles.filter(role => rolesCache.has(role))) return ephemeral('No permission.', fullCommand);
-                else ephemeral(null, fullCommand);
-                const roleMentions = filteredRoles.map(role => `<@&${role.id}>`).join(', ');
-                channel.send(`Poll for ${roleMentions}`, embed).then(message => {
-                    const voteDetails = {
-                        'voteId': voteId++,
-                        'question': content,
-                        'initDate': initDate.toISOString(),
-                        'doneDate': doneDate.toISOString(),
-                        'roles': filteredRoles.map(r => r.id),
-                        'guild': guild.id,
-                        'channel': channel.id,
-                        'message': message.id,
-                        'votes': []
-                    };
-                    voteData.push(voteDetails);
-                    supportPoll(message, voteDetails);
-                });
-            });
-            break;
-        default:
-            const error = `Invalid Command: ${cmd}:\n<${args.length?args:'no args'}>`;
-            ephemeral(error, fullCommand);
-            break;
-    }
-}
-
-function supportPoll(message, voteDetails) {
-    voteDetails.message = message.id;
-    VOTE_PERSISTANCE.writeFile(voteData);
-    addPollReactions(message);
-
-    message.pin();
-    setTimeout(() => {
-        if (message.channel.lastMessage.system) message.channel.lastMessage.delete({ 'timeout': 1000 });
-    }, 5000);
-
-    registerListener(message, voteDetails);
-}
-
-function displayPoll(voteDetails) {
-    CLIENT.guilds.fetch(voteDetails.guild).then(guild => {
-        const channel = guild.channels.cache.get(voteDetails.channel);
-        if (channel.lastMessageID === voteDetails.message) return resolve(voteDetails.message);
-        channel.messages.fetch(voteDetails.message).then(message => {
-            if (channel.lastMessageID === message.id) return;
-            message.delete();
-            const embed = new DISCORD.MessageEmbed(message.embeds[0]);
-            channel.send(message.content, embed).then(freshMsg => {
-                supportPoll(freshMsg, voteDetails);
-            });
-        }, (e) => {
-            let embed = new DISCORD.MessageEmbed().setTitle(voteDetails.question).setAuthor('Vote Called')
-                    .addField('React Below to Vote:', responses).addField('Instructions:', instructions)
-                    .setDescription(`Closes ${new Date(voteDetails.doneDate).toLocaleDateString()} @ `+
-                            `${new Date(voteDetails.doneDate).toLocaleTimeString(undefined, { 'timeZoneName': 'short' })}`);
-                            
-            if (voteDetails.question.startsWith('url:')) {
-                const pollArgs = voteDetails.question.match(/url:(\[.+\]\(.+\)) (.+)/);
-                embed.setTitle(pollArgs[2]);
-                embed.setDescription(pollArgs[1]+'\n'+embed.description);
-            }
-            const roleMentions = voteDetails.roles.map(role => `<@&${role}>`).join(', ');
-            channel.send(`Poll for ${roleMentions}`, embed).then(freshMsg => {
-                supportPoll(freshMsg, voteDetails);
-            });
-        });
-    });
-}
-
-function addPollReactions(message) {
-    message.react('👍');
-    message.react('🚫');
-    message.react('👎');
-    message.react('❔');
-    message.react('🔄');
-    message.react('❌');
-}
-
-function registerListener(message, voteDetails) {
-    const reactions = message.createReactionCollector(() => true, {});
-    reactions.on('collect', (r, u) => {
-        if (u.bot) return;
-        const guild = CLIENT.guilds.cache.get(voteDetails.guild);
-        const channel = guild.channels.cache.get(voteDetails.channel);
-        const embed = message.embeds[0];
-
-        r.users.remove(u);
-        guild.members.fetch().then(members => {
-            const eligibleRoles = new DISCORD.Collection(voteDetails.roles.map(r => [r, null]));
-            const eligibleIds = members.filter(i => i.roles.cache.intersect(eligibleRoles).size).map(i => i.id);
-            if (!eligibleIds.includes(u.id)) return;
-            const member = members.get(u.id);
-            const embedUpdate = new DISCORD.MessageEmbed(embed);
-            const votes = { 'f09f918d': 0, 'f09f9aab': 0, 'f09f918e': 0 };
-            voteDetails.votes.forEach(vote => votes[vote.voteHash]++);
-            const closingTime = new Date(voteDetails.doneDate);
-            const voteHash = Buffer.from(r.emoji.toString()).toString('hex');
-            const pollData = voteDetails.question.match(/(url:(\[.+\]\(.+\)) +)?(.+)/);
-            const tallyEmbed = new DISCORD.MessageEmbed({ 'title': pollData[3] });
-            if (pollData[2]) tallyEmbed.setDescription(pollData[2]);
-            if (!Object.keys(votes).includes(voteHash) || new Date() > closingTime) {
-                if (voteHash === 'e29d8c' || new Date() > closingTime) {
-                    if (voteHash === 'e29d8c') {
-                        if (u.id !== guild.ownerID && !member.roles.cache.has(STATE_CHAIR)) return;
-                    }
-                    const voteMsg = voteDetails.votes.map(vote => {
-                        return `<@!${vote.user}> - ${vote.vote}`;
-                    }).join('\n');
-                    tallyEmbed.addField(`Vote Results (as of ${new Date().toLocaleString()}):`, voteMsg);
-                    channel.send(tallyEmbed);
-                    reactions.stop();
-                    r.message.delete();
-                    voteData.filter((vote, idx) => vote.voteId !== voteDetails.voteId || voteData.splice(idx, 1));
-                    VOTE_PERSISTANCE.writeFile(voteData);
-                } else if (voteHash === 'e29d94') {
-                    const voteMsg = voteDetails.votes.map(vote => {
-                        return `<@!${vote.user}> - ${vote.vote}`;
-                    }).join('\n') + '\n' + eligibleIds.filter(id => !voteDetails.votes.map(v => v.user).includes(id)).map(id => `<@!${id}> - Awaiting Vote`).join('\n');
-                    tallyEmbed.addField(`Vote Results (as of ${new Date().toLocaleString()}):`, voteMsg);
-                    const infoMsg = {
-                        'data': {
-                            'embed': tallyEmbed,
-                            'message_reference': { 'message_id': voteDetails.message }
-                        }
-                    }
-                    CLIENT.api.channels(voteDetails.channel).messages.post(infoMsg).then(msg => {
-                        channel.messages.fetch(msg.id).then(m => m.delete({ 'timeout': 20000 }));
-                    });
-                } else if (voteHash === 'f09f9484') {
-                    channel.messages.fetch({ 'limit': 1}).then(m => {
-                        if (!m.has(voteDetails.message))
-                            displayPoll(voteDetails);
-                    });
-                }
-                return;
-            }
-            let currentVoteIdx = -1;
-            const currentVote = voteDetails.votes.filter((vote, idx) => {
-                if (u.id === vote.user) {
-                    currentVoteIdx = idx;
-                    return true;
-                } else return false;
-            });
-            if (!currentVote.length) {
-                voteDetails.votes.push({ 'user': u.id, 'voteHash': voteHash, 'vote': voteMap[voteHash] });
-                votes[voteHash]++;
-            } else {
-                voteDetails.votes.splice(currentVoteIdx, 1, { 'user': u.id, 'voteHash': voteHash, 'vote': voteMap[voteHash] });
-                votes[currentVote[0].voteHash]--;
-                votes[voteHash]++;
-            }
-            VOTE_PERSISTANCE.writeFile(voteData);
-            const voteUpdate = `:+1: - Aye - ${votes['f09f918d']} votes in favor\n`+
-                    `:no_entry_sign: - Abstain - ${votes['f09f9aab']} abstentions\n`+
-                    `:-1: - Nay - ${votes['f09f918e']} votes against`;
-            embedUpdate.spliceFields(0, 1, { 'name': 'React Below to Vote:', 'value': voteUpdate });
-            r.message.edit(embedUpdate);
-        });
-    });
-    reactions.on('end', () => {});
-}
-
-function ephemeral(content, interaction) {
-    const data = {
-        'type': content?3:2,
-        'data': {
-            'content': content,
-            'flags': 64
-        }
-    };
-    CLIENT.api.interactions(interaction.id, interaction.token).callback.post({ 'data': data });
-}
-
-CLIENT.ws.on('INTERACTION_CREATE', async interaction => {
-    processCommand(interaction.data.options[0].value, interaction);
-});
 
 const SEAN_LOVE = [
     `<@!${SEAN}> is :heart:...`,
@@ -577,11 +63,452 @@ const SEAN_LOVE = [
     `<@!${SEAN}> raises my :heart: rate like Republicans and Democrats raise the debt.`,
     `<@!${SEAN}> makes my interface GUI!`,
     `<@!${SEAN}> can void my warranty!`,
-    `<@!${SEAN}>, I'm the droid you're looking for!`
+    `<@!${SEAN}>, I'm the droid you're looking for!`,
+    `<@!${SEAN}> can whip my nae nae!`,
+    `<@!${SEAN}> has a pet name for me...it's Leg-Hump-A-Tron 3000 :heart_eyes:`
 ];
+
+function processCommand(command, fullCommand) {
+    console.log(command);
+
+    const guild = CLIENT.guilds.cache.get(fullCommand.guild_id);
+    const channel = guild.channels.cache.get(fullCommand.channel_id);
+    const rolesCache = guild.roles.cache;
+
+    const args = command.split(/ +/);
+    const cmd = args.shift().toLowerCase();
+    const content = command.slice(cmd.length+1);
+
+    switch (cmd) {
+        case 'ballota':
+            if (!content) return ephemeral('No question provided.', fullCommand);
+            const ballotScheduleArg = content.match(/^(list|cancel):(\d+|\*)$/);
+            if (ballotScheduleArg) {
+                if (ballotScheduleArg[1] === 'list') {
+                    if (ballotScheduleArg[2] === '*') {
+                        if (voteData.filter(v => v.message === '-1' && !v.question).length === 0) return ephemeral('No scheduled polls.', fullCommand);
+                        const pollList = voteData.filter(v => v.message === '-1')
+                                .map(v => `${v.voteId} - ${v.position.replace(/url:(\[.+\])\(.+\) +(.+)/, '$2 $1')}: ${new Date(v.ballotInitDate).toLocaleString()}`)
+                                .join('\n');
+                        return ephemeral(pollList, fullCommand);
+                    } else if (!isNaN(ballotScheduleArg[2])) {
+                        const pollData = voteData.find(v => v.message === '-1' && !v.question && v.voteId === Number(ballotScheduleArg[2]));
+                        if (!pollData) return ephemeral(`Poll ${ballotScheduleArg[2]} not found.`, fullCommand);
+                        const pollMsg = `${pollData.voteId} - ${pollData.position.replace(/url:(\[.+\])\(.+\) +(.+)/, '$2 $1')}: `+
+                                `${new Date(pollData.ballotInitDate).toLocaleString()}\n<#${pollData.channel}> ${pollData.roles.map(r => `<@&${r}>`)}`
+                        return ephemeral(pollMsg, fullCommand);
+                    } else return ephemeral(`Invalid poll id: ${ballotScheduleArg[2]}`, fullCommand);
+                } else if (ballotScheduleArg[1] === 'cancel') {
+                    if (!isNaN(ballotScheduleArg[2])) {
+                        const pollIndex = voteData.findIndex(v => v.voteId === Number(ballotScheduleArg[2]) && v.message === '-1');
+                        if (pollIndex === -1) return ephemeral(`Poll ${ballotScheduleArg[2]} not found.`, fullCommand);
+                        voteData.splice(pollIndex, 1);
+                        VOTE_PERSISTANCE.writeFile(voteData);
+                        return ephemeral(`Poll ${ballotScheduleArg[2]} deleted.`, fullCommand);
+                    } else return ephemeral(`Invalid poll id: ${ballotScheduleArg[2]}`, fullCommand);
+                }
+            }
+            const ballotInitArg = content.match(/(.*)init:\((.+?)\)(.*)/);
+            const secretCheck = ballotInitArg?`${ballotInitArg[1].trim()} ${ballotInitArg[3].trim()}`.trim():content;
+            if (ballotInitArg) {
+                const dateBits = ballotInitArg[2].match(/^((\d{1,4}[-\./]\d{1,2}([-\./]\d{1,4})?)?[T ])?((\d{1,2})([:\.]?(\d{0,2}))?)([ap]?)m?$/);
+                if (dateBits) {
+                    if (dateBits[1]) {
+                        if (isNaN(new Date(dateBits[1]))) return ephemeral(`Unrecognized date: ${dateBits[1]}`, fullCommand);
+                        dateBits[1] = new Date(dateBits[1]);
+                        if (dateBits[1].getFullYear() < new Date().getFullYear()) dateBits[1].setFullYear(new Date().getFullYear());
+                    } else dateBits[1] = new Date();
+                    if (dateBits[8] && dateBits[8] === 'p') dateBits[5] = (Number(dateBits[5])+12).toString();
+                    if (dateBits[8] && dateBits[8] === 'a' && dateBits[5] === '12') dateBits[5] = '00';
+                    ballotInitArg[2] = new Date(`${dateBits[1].toDateString()} ${dateBits[5]}:${dateBits[7] || '00'}`);
+                    if (ballotInitArg[2] < new Date()) ballotInitArg[2].setDate(ballotInitArg[2].getDate()+1);
+                    if (ballotInitArg[2] < new Date()) return ephemeral(`Date has passed: ${ballotInitArg[2].toLocaleString()}`, fullCommand);
+                }
+            }
+            const ballotInitDate = new Date(ballotInitArg?ballotInitArg[2]:new Date());
+            const ballotDoneDate = new Date(ballotInitDate.getTime()+(48*60*60*1000));
+            const secretArg = secretCheck.match(/(.*)secret:(true|false)(.*)/);
+            const ballotQuestion = secretArg?`${secretArg[1].trim()} ${secretArg[3].trim()}`:secretCheck;
+            const isSecret = secretArg?secretArg[2] !== 'false':true;
+            const ballotArgs = ballotQuestion.split('/').map(i => i.trim());
+            const position = ballotArgs.shift();
+            if (ballotArgs.length > 10) return ephemeral(`<@!816085452091424799> only supports 10 options at this time.`, fullCommand);
+            const ballotRoles = [];
+            guild.members.fetch().then(members => {
+                const ballotEmbed = new DISCORD.MessageEmbed().setTitle(`Vote for ${position}:${!isSecret?' *(NOT SECRET)*':''}`);
+                const candidates = ballotArgs.map((candidate, idx) => {
+                    return `${selections[idx]} - ${candidate}`
+                }).join('\n');
+                ballotEmbed.addField('Candidates:', candidates+'\n📝 - Write In\n🚫 - None of the Above', !isSecret);
+                if (!isSecret) ballotEmbed.addField('Votes:', new Array(ballotArgs.length+2).fill('0').join('\n'), true);
+                ballotEmbed.addField('Instructions:', instructions);
+                guild.roles.fetch().then(roles => {
+                    roles.cache.forEach(role => {
+                        const bitfield = BigInt(channel.permissionsFor(role.id).bitfield);
+                        if ((bitfield & PERMS.REQD_VOTE_PERMS) === PERMS.REQD_VOTE_PERMS)
+                            ballotRoles.push(role);
+                    });
+                    const filteredBallotRoles = ballotRoles.filter(role => {
+                        return !BOT_ROLES.includes(role.id) && (channel.parent.id !== CHANS.EXEC_SESSION_CAT || role.id === ROLES.STATE_BOARD);
+                    });
+                    const ballotRoleMentions = filteredBallotRoles.map(role => `<@&${role.id}>`).join(', ');
+                    const eligibleRoles = new DISCORD.Collection(filteredBallotRoles.map(r => [r.id, null]));
+                    const eligibleIds = members.filter(i => i.roles.cache.intersect(eligibleRoles).size).map(i => i.id);
+                    ballotEmbed.setDescription(`0/${eligibleIds.length} eligible votes.`);
+                    const voteDetails = {
+                        'voteId': voteId++,
+                        'position': position,
+                        'candidates': ballotArgs,
+                        'secret': isSecret,
+                        'initDate': ballotInitDate,
+                        'doneDate': ballotDoneDate,
+                        'roles': filteredBallotRoles.map(r => r.id),
+                        'guild': guild.id,
+                        'channel': channel.id,
+                        'message': '-1',
+                        'votes': [],
+                        'voters': []
+                    };
+                    voteData.push(voteDetails);
+                    if (new Date(voteDetails.initDate) <= new Date()) {
+                        channel.send(`Ballot for ${ballotRoleMentions}`, ballotEmbed).then(ballotMessage => {
+                            voteDetails.message = ballotMessage.id;
+                            VOTE_PERSISTANCE.writeFile(voteData);
+                            ephemeral(null, fullCommand);
+                            for (let idx=0; idx<ballotArgs.length; idx++) ballotMessage.react(selections[idx]);
+                            ballotMessage.react('📝');
+                            ballotMessage.react('🚫');
+                            ballotMessage.react('❔');
+                            ballotMessage.react(':whip:830972517598494740');
+                            ballotMessage.react('🔄');
+                            ballotMessage.react('❌');
+                
+                            ballotMessage.pin().then(pinMsg => {
+                                pinMsg.channel.messages.fetch().then(msgs => {
+                                    msgs.find(m => m.system).delete();
+                        
+                                    registerBallotListener(ballotMessage, voteDetails);
+                                });
+                            });
+                        });
+                    } else {
+                        VOTE_PERSISTANCE.writeFile(voteData);
+                        return ephemeral(`Ballot ${voteId-1} scheduled for ${ballotInitDate.toLocaleString()}`, fullCommand)
+                    }
+                });
+            });
+            break;
+        default:
+            BaseCommand.runCommand(fullCommand, CLIENT);
+            break;
+    }
+}
+
+function displayBallotPoll(voteDetails) {
+    CLIENT.guilds.fetch(voteDetails.guild).then(guild => {
+        const channel = guild.channels.cache.get(voteDetails.channel);
+        if (channel.lastMessageID === voteDetails.message) return;
+        channel.messages.fetch(voteDetails.message).then(message => {
+            if (channel.lastMessageID === message.id) return;
+            message.delete();
+            const embed = new DISCORD.MessageEmbed(message.embeds[0]);
+            channel.send(message.content, embed).then(freshMsg => {
+                voteDetails.message = freshMsg.id;
+                VOTE_PERSISTANCE.writeFile(voteData);
+                for (let idx=0; idx<voteDetails.candidates.length; idx++) freshMsg.react(selections[idx]);
+                freshMsg.react('📝');
+                freshMsg.react('🚫');
+                freshMsg.react('❔');
+                freshMsg.react(':whip:830972517598494740');
+                freshMsg.react('🔄');
+                freshMsg.react('❌');
+            
+                freshMsg.pin().then(pinMsg => {
+                    pinMsg.channel.messages.fetch().then(msgs => {
+                        msgs.find(m => m.system).delete();
+            
+                        registerBallotListener(freshMsg, voteDetails);
+                    });
+                });
+            });
+        }, e => {
+            const roleMentions = 'Ballot for '+voteDetails.roles.map(r => `<@&${r}>`).join(', ');
+            const eligibleRoles = new DISCORD.Collection(voteDetails.roles.map(r => [r, null]));
+            const candidates = voteDetails.candidates.map((candidate, idx) => `${selections[idx]} - ${candidate}`).join('\n');
+            guild.members.fetch().then(members => {
+                const eligibleIds = members.filter(i => i.roles.cache.intersect(eligibleRoles).size).map(i => i.id);
+                const embed = new DISCORD.MessageEmbed().setTitle(`Vote for ${voteDetails.position}:${!voteDetails.secret?' *(NOT SECRET)*':''}`)
+                        .setDescription(`${voteDetails.votes.filter(v => v.candidate).length}/${eligibleIds.length} eligible votes.`)
+                        .addField('Candidates:', candidates+'\n📝 - Write In\n🚫 - None of the Above')
+                        .addField('Instructions:', instructions);
+                
+                channel.send(roleMentions, embed).then(freshMsg => {
+                    voteDetails.message = freshMsg.id;
+                    VOTE_PERSISTANCE.writeFile(voteData);
+                    for (let idx=0; idx<voteDetails.candidates.length; idx++) freshMsg.react(selections[idx]);
+                    freshMsg.react('📝');
+                    freshMsg.react('🚫');
+                    freshMsg.react('❔');
+                    freshMsg.react(':whip:830972517598494740');
+                    freshMsg.react('🔄');
+                    freshMsg.react('❌');
+                
+                    freshMsg.pin().then(pinMsg => {
+                        pinMsg.channel.messages.fetch().then(msgs => {
+                            msgs.find(m => m.system).delete();
+                
+                            registerBallotListener(freshMsg, voteDetails);
+                        });
+                    });
+                });
+            });
+        });
+    });
+}
+
+function registerBallotListener(message, voteDetails) {
+    const reactions = message.createReactionCollector(() => true, {});
+    const eligibleRoles = new DISCORD.Collection(voteDetails.roles.map(r => [r, null]));
+    const guild = CLIENT.guilds.cache.get(voteDetails.guild);
+    const channel = guild.channels.cache.get(voteDetails.channel);
+    const embed = message.embeds[0];
+    guild.members.fetch().then(members => {
+        const eligibleIds = members.filter(i => i.roles.cache.intersect(eligibleRoles).size).map(i => i.id);
+
+        reactions.on('collect', (r, u) => {
+            if (u.bot) return;
+
+            r.users.remove(u).catch();
+            if (!eligibleIds.includes(u.id)) return;
+            const member = members.get(u.id);
+            const embedUpdate = new DISCORD.MessageEmbed(embed);
+            const voteHash = Buffer.from(r.emoji.toString()).toString('hex');
+            const votes = {
+                'f09f87a6': 0, 'f09f87a7': 0, 'f09f87a8': 0, 'f09f87a9': 0, 'f09f87aa': 0,
+                'f09f87ab': 0, 'f09f87ac': 0, 'f09f87ad': 0, 'f09f87ae': 0, 'f09f87af': 0,
+                'f09f939d': 0, 'f09f9aab': 0
+            };
+            if (voteHash === 'e29d8c') {
+                if (!member.roles.cache.has(ROLES.STATE_CHAIR) && !member.roles.cache.has(ROLES.ADMIN)) return;
+                voteDetails.votes.forEach(vote => vote.candidate?votes[vote.voteHash]++:0);
+                const totalVotes = voteDetails.votes.filter(v => v.candidate).length;
+                const validVotes = Object.keys(votes).filter((v, idx) => voteDetails.candidates[idx]);
+                const writeInArray = voteDetails.votes.filter(v => v.voteHash === 'f09f939d').map(v => v.candidate);
+                const writeInTally = {};
+                writeInArray.forEach(v => {
+                    if (!writeInTally[v]) writeInTally[v] = 1;
+                    else writeInTally[v]++;
+                });
+                const writeInResult = Object.keys(writeInTally).map(c => `  ${c} - ${writeInTally[c]}`).join('\n');
+                const writeInPercent = Object.keys(writeInTally).map(c => `  (${((writeInTally[c]/totalVotes)*100).toFixed(2)}%)`).join('\n');
+                const tallies = validVotes.map((v, idx) => `${voteDetails.candidates[idx]} - ${votes[v]}`).join('\n')
+                        + `\nNone of the Above - ${votes['f09f9aab']}`
+                        + `\n__**Write In - ${votes['f09f939d']}${votes['f09f939d']?':':''}**__\n${writeInResult}`;
+                const percentages = validVotes.map((v, idx) => `(${((votes[v]/totalVotes)*100).toFixed(2)}%)`).join('\n')
+                        + `\n(${((votes['f09f9aab']/totalVotes)*100).toFixed(2)}%)`
+                        + `\n(${((votes['f09f939d']/totalVotes)*100).toFixed(2)}%)`
+                        + `\n${writeInPercent}`;
+                const voteInfo = voteDetails.secret?null:voteDetails.votes.filter(v => v.candidate)
+                        .map(v => `${members.get(v.user).nickname || members.get(v.user).user.username} - ${v.candidate}`).join('\n');
+                const results = new DISCORD.MessageEmbed().setTitle(`Balloting for ${voteDetails.position} complete.`).setDescription(`Total Votes: ${totalVotes}\n`)
+                        .addField('Tally:', tallies, true).addField('Percentage:', percentages, true);
+                if (!voteDetails.secret) results.addField('Votes:', voteInfo || 'No votes received.');
+                voteData.splice(voteData.findIndex(v => v.voteId === voteDetails.voteId), 1);
+                VOTE_PERSISTANCE.writeFile(voteData);
+                r.message.delete({ 'timeout': 1000 }).catch(console.log);
+                channel.send(results).catch(console.log);
+            } else if (voteHash === '3c3a776869703a3833303937323531373539383439343734303e') {
+                const awaitingMsg = eligibleIds.filter(u => !voteDetails.voters.includes(u))
+                        .map(u => `<@!${u}>`).join(', ') + ', your votes are pending.';
+                const awaitingEmbed = new DISCORD.MessageEmbed().setTitle(`Balloting for ${voteDetails.position}:`).addField('Awaiting Votes from:', awaitingMsg);
+                const awaitingObj = {
+                    'data': {
+                        'content': awaitingMsg,
+                        'message_reference': { 'message_id': r.message.id }
+                    }
+                };
+                if (!eligibleIds.includes(u.id)) u.createDM().then(channel => {
+                    channel.send(awaitingEmbed);
+                });
+                else CLIENT.api.channels(voteDetails.channel).messages.post(awaitingObj).then(msg => {
+                    channel.messages.fetch(msg.id).then(m => m.delete({ 'timeout': 20000 }));
+                });
+            } else if (voteHash === 'e29d94') {
+                const awaitingMsg = eligibleIds.filter(u => !voteDetails.voters.includes(u))
+                        .map(u => `${members.get(u).nickname || members.get(u).user.username}`).join('\n');
+                const voteInfo = voteDetails.secret?null:voteDetails.votes.filter(v => v.candidate)
+                        .map(v => `${members.get(v.user).nickname || members.get(v.user).user.username} - ${v.candidate}`).join('\n');
+                const awaitingEmbed = new DISCORD.MessageEmbed().setTitle(`Balloting for ${voteDetails.position}:`).addField('Awaiting Votes from:', awaitingMsg || 'none');
+                if (!voteDetails.secret) awaitingEmbed.addField('Votes:',  voteInfo || 'No votes received.');
+                const awaitingObj = {
+                    'data': {
+                        'embed': awaitingEmbed,
+                        'message_reference': { 'message_id': r.message.id }
+                    }
+                }
+                if (!eligibleIds.includes(u.id)) u.createDM().then(channel => {
+                    channel.send(awaitingEmbed);
+                });
+                else CLIENT.api.channels(voteDetails.channel).messages.post(awaitingObj).then(msg => {
+                    channel.messages.fetch(msg.id).then(m => m.delete({ 'timeout': 20000 }));
+                });
+            } else if (voteHash === 'f09f9484') {
+                channel.messages.fetch({ 'limit': 1}).then(m => {
+                    if (!m.has(voteDetails.message))
+                        displayBallotPoll(voteDetails);
+                });
+            } else {
+                if (voteDetails.voters.includes(u.id) && voteDetails.secret) return;
+                if (voteDetails.voters.includes(u.id) && !voteDetails.secret) {
+                    voteDetails.voters.splice(voteDetails.voters.findIndex(v => v === u.id), 1);
+                    voteDetails.votes.splice(voteDetails.votes.findIndex(v => v.user === u.id), 1);
+                }
+                voteDetails.voters.push(u.id);
+                const vote = { 'voteHash': voteHash };
+                if (!voteDetails.secret) vote['user'] = u.id;
+                vote['candidate'] = voteDetails.candidates.filter((c, idx) => Object.keys(votes)[idx] === voteHash)[0];
+                if (voteHash === 'f09f939d') {
+                    vote['key'] = voteDetails.voteId+':'+CRYPTO.randomBytes(4).toString('hex');
+                    u.createDM().then(channel => {
+                        channel.send(`You have selected the "Write In" option on the ballot for ${voteDetails.position}.  You have been assigned a vote key of **WIV${vote['key']}**.\n\n`+
+                                `Please reply with your selection using the following syntax to ensure your vote is tabulated correctly:\n\`WIV${vote['key']}: Jamie Doe\``);
+                    });
+                } else if (voteHash === 'f09f9aab') {
+                    vote['candidate'] = 'None of the Above';
+                }
+                voteDetails.votes.push(vote);
+                if (!voteDetails.secret) {
+                    voteDetails.votes.forEach(vote => vote.candidate?votes[vote.voteHash]++:0);
+                    const currentTally = [voteDetails.candidates.map((c, idx) => Object.values(votes)[idx]).join('\n'),
+                            [votes['f09f939d'], votes['f09f9aab']].join('\n')].join('\n');
+                    embedUpdate.spliceFields(1, 1, { 'name': 'Votes:', 'value': currentTally, 'inline': true })
+                }
+                VOTE_PERSISTANCE.writeFile(voteData);
+                embedUpdate.setDescription(`${voteDetails.votes.filter(v => v.candidate).length}/${eligibleIds.length} eligible votes.`);
+                r.message.edit(embedUpdate).catch(console.log);
+            }
+        });
+    });
+}
+
+function ephemeral(content, interaction, isFollowUp = false) {
+    if (!content && !isFollowUp) content = 'done';
+    const data = {
+        'type': content ? 4 : (isFollowUp ? 5 : 2),
+        'data': {
+            'content': content,
+            'flags': 64
+        }
+    };
+    
+    if (content && isFollowUp) CLIENT.api.webhooks(CREDS.id, interaction.token).messages['@original'].patch({ 'data': { 'content': content } });
+    else CLIENT.api.interactions(interaction.id, interaction.token).callback.post({ 'data': data });
+}
+
+function tweetApproval(collector) {
+    return (r, u) => {
+        if (u.bot) return;
+
+        const guild = r.message.channel.guild;
+        const message = r.message;
+        
+        const status = message.content.match(/https?:\/\/(www\.)?twitter.com\/.+\/status\/(\d+)/);
+
+        guild.members.fetch(u.id).then(member => {
+            if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,] ])).size) return r.users.remove().catch();
+            
+            const postData = {
+                'key': CREDS.webhook,
+                'proposer': message.author.id,
+                'approver': u.id
+            };
+
+            if (status && status[0].length === message.content.length) {
+                postData.rtId = status[2];
+            } else {
+                Object.assign(postData, {
+                    'content': message.content,
+                    'attachment': message.attachments.array().map(a => { return { 'url': a.url } })
+                });
+                if (status) postData['containsTweet'] = true;
+            }
+
+            const reqOpts = {
+                'method': 'POST',
+                'headers': {
+                    'Content-Type': 'application/json'
+                }
+            };
+            const req = HTTPS.request('https://lpdelaware.api.stdlib.com/twitter-hook@dev/postTweet/', reqOpts, res => {
+                console.log('Tweet Approved');
+            });
+            req.write(JSON.stringify(postData));
+            req.end();
+            
+            collector.stop();
+        });
+    }
+}
 
 CLIENT.on('message', message => {
     if (message.author.bot) return;
+
+    if (message.channel.type === 'dm') {
+        const voteMsg = message.content.match(/WIV((\d+):.+): (.+)/);
+        if (voteMsg) {
+            const vote = BallotCommand.voteData.filter(v => v.voteId.toString() === voteMsg[2])[0];
+            if (vote) {
+                if (vote.votes.find(v => v.user === message.author.id && v.candidate === voteMsg[3]))
+                    return message.channel.send(`You have already submitted a write in vote for ${voteMsg[3]}.  You cannot submit two for the same candidate.`);
+                if (vote.candidates.includes(voteMsg[3]))
+                    return message.channel.send(`You are trying to submit a write in vote for a listed candidate.  Please vote using the reaction for that candidate.`)
+                const wiv = vote.votes.filter(v => v.key === voteMsg[1])[0];
+                if (wiv) {
+                    delete wiv.key;
+                    wiv.candidate = voteMsg[3];
+                    VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
+                    CLIENT.channels.fetch(vote.channel).then(channel => {
+                        channel.messages.fetch(vote.message).then(ballotMessage => {
+                            const embedUpdate = new DISCORD.MessageEmbed(ballotMessage.embeds[0]);
+                            const desc = embedUpdate.description.split('\n');
+                            const tally = desc[desc.length-1].match(/^(\d+)\/(.+)$/);
+                            if (vote.votes.filter(v => v.user === message.author.id).length === 1)
+                                desc[desc.length-1] = `${Number(tally[1])+1}/${tally[2]}`;
+                            embedUpdate.setDescription(desc.join('\n'));
+                            if (!vote.secret) {
+                                embedUpdate.fields[1].value = embedUpdate.fields[1].value.split('\n')
+                                        .map((t, idx, v) => idx === (v.length-2)?Number(t)+1:t).join('\n');
+                            }
+                            ballotMessage.edit(embedUpdate);
+                        });
+                    });
+                    return message.channel.send(`Your vote has been recorded.  No data has been saved linking your user information to your selection.`);
+                } else return message.channel.send(`You sent me a vote, but I could not match the write in key.`);
+            } else return message.channel.send(`You sent me a vote, but I couldn't find the ballot.`);
+        } else return message.channel.send(`I only understand write in votes and can't respond to any other direct messages.`);;
+    }
+
+    const channel = CLIENT.api.channels(message.channel.id);
+    if (message.channel.id === '829194592938360842') {
+
+        if (message.content.length > 280) {
+            return channel.messages.post({
+                'data': {
+                    'content': `This message is too long. (${message.content.length}/280)`,
+                    'message_reference': { 'message_id': message.id }
+                }
+            });
+        }
+
+        message.react('👍');
+
+        const collector = message.createReactionCollector(() => true, {})
+        collector.on('collect', tweetApproval(collector))
+        return;
+    }
+
+    const messages = [];
+
     if (message.mentions.members.has(SEAN)) {
         const loveNote = {
             'data': {
@@ -591,8 +518,22 @@ CLIENT.on('message', message => {
                 }
             }
         };
-        CLIENT.api.channels(message.channel.id).messages.post(loveNote);
+        messages.push({
+            'msg': loveNote,
+            'cb': messageObj => {
+                message.channel.messages.fetch(messageObj.id).then(botMsg => {
+                    botMsg.react(':lpd:816223082728783902');
+                    botMsg.react('❤️');
+                    botMsg.react('🧡');
+                    botMsg.react('💛');
+                    botMsg.react('💚');
+                    botMsg.react('💙');
+                    botMsg.react('💜');
+                });
+            }
+        });
     }
+
     if (message.content.toLowerCase().includes('taxation')) {
         const taxationIsTheft = {
             'data': {
@@ -602,8 +543,33 @@ CLIENT.on('message', message => {
                 }
             }
         };
-        CLIENT.api.channels(message.channel.id).messages.post(taxationIsTheft);
+
+        messages.push({
+            'msg': (taxationIsTheft),
+            'cb': messageObj => {
+                message.channel.messages.fetch(messageObj.id).then(botMsg => botMsg.react(':lpd:816223082728783902'));
+            }
+        });
     }
+
+    if (message.content.toLowerCase().includes('off the deep end')) {
+        const hypnotoad = {
+            'data': {
+                'content': 'https://www.overthinkingit.com/wp-content/uploads/2013/09/hypnotoad-animated.gif',
+                'message_reference': {
+                    'message_id': message.id
+                }
+            }
+        };
+
+        messages.push({
+            'msg': (hypnotoad),
+            'cb': messageObj => {
+                message.channel.messages.fetch(messageObj.id).then(botMsg => botMsg.react(':lpd:816223082728783902'));
+            }
+        });
+    }
+
     if (message.content.toLowerCase().includes('real libertarian')) {
         const realLibertarian = {
             'data': {
@@ -613,8 +579,41 @@ CLIENT.on('message', message => {
                 }
             }
         };
-        CLIENT.api.channels(message.channel.id).messages.post(realLibertarian);
+
+        messages.push({
+            'msg': realLibertarian,
+            'cb': messageObj => {
+                message.channel.messages.fetch(messageObj.id).then(botMsg => botMsg.react(':lpd:816223082728783902'));
+            }
+        });
     }
+
+    if (message.content.toLowerCase().match(/(\bdonat(e|ion))(\b|s)/)) {
+        const donations = {
+            'data': {
+                'content': 'Did someone say donate?',
+                'embed': new DISCORD.MessageEmbed(DONATION_EMBED),
+                'message_reference': {
+                    'message_id': message.id
+                }
+            }
+        };
+
+        messages.push({
+            'msg': donations,
+            'cb': messageObj => {
+                message.channel.messages.fetch(messageObj.id).then(botMsg => botMsg.react(':lpd:816223082728783902'));
+            }
+        });
+    }
+
+    messages.reduce((p, msg, idx, a) => {
+        if (idx === 0) {
+            return channel.messages.post(msg.msg).then(msg.cb);
+        } else {
+            return message.channel.send(msg.msg.data.content, msg.msg.data.embed).then(msg.cb);
+        }
+    }, Promise.resolve());
 
     if (message.content.toLowerCase().includes('lpd') || message.content.toLowerCase().includes('libertarian party of delaware')) {
         message.react(':lpd:816223082728783902');
@@ -625,72 +624,51 @@ CLIENT.on('message', message => {
     }
 });
 
-function manageRules(guildId, channelId, messageId) {
-    return new Promise((resolve, reject) => {
-        CLIENT.guilds.fetch(guildId).then(guild => {
-            guild.channels.resolve(channelId).messages.fetch(messageId).then(message => {
-                const rulesListener = message.createReactionCollector(() => true, { 'dispose': true });
-                if (!message.reactions.cache.get('🦔')) message.react('🦔');
-                else message.reactions.cache.get('🦔').users.fetch(CLIENT.user.id).then(users => {
-                    if (!users.get(CLIENT.user.id)) message.react('🦔');
-                });
-                rulesListener.on('collect', (r, u) => {
-                    if (!u.bot) r.users.remove(u.id);
-                    const hash = Buffer.from(r.emoji.name.toString()).toString('hex');
-                    if (hash === 'f09fa694' || hash === '6c7064') {
-                        guild.members.fetch(u.id).then(member => {
-                            if (member.roles.cache.has(GENERAL)) return;
-                            if (u.bot) return;
-                            console.log(`Rules (accept): ${u.username}`);
-                            guild.channels.resolve('822343177104261160').send(`<@${u.id}> has accepted the rules.`);
-                            u.createDM().then(channel => {
-                                channel.send('Thank you for agreeing to our rules.\n\nPlease consider donating to the Libertarian Party of Delaware.  '+
-                                        'We rely on donors donors like you to fund all of our activities.\n\nThank you for your support!',
-                                        new DISCORD.MessageEmbed().setTitle('Donate to the LPD').setURL('https://www.lpdelaware.org/p/donate.html')
-                                                .setDescription(`The State Board has currently established funds for:\n`+
-                                                        ` • The 2021 Convention\n`+
-                                                        ` • The Social Media and Marketing Committee\n`+
-                                                        ` • Hosting the [LPD Activism Application](https://app.lpdelaware.org) on Google Cloud Hosting\n`+
-                                                        `All other donations go to the general fund to be spent at the discretion of the LPD State Board `+
-                                                        `on everything from fundraising events to outreach to candidate support.`));
-                            });
-                            member.roles.add(GENERAL);
-                            member.roles.remove('815635833725517836');
-                        });
-                    };
-                });
-                resolve();
-            }, e => reject);
-        });
-    });
-}
+CLIENT.ws.on('INTERACTION_CREATE', async interaction => {
+    processCommand(interaction.data.options[0].value, interaction);
+});
 
 CLIENT.on('guildMemberAdd', member => {
-    member.roles.add('815635833725517836');
+    member.roles.add(ROLES.RESTRICTED);
     member.createDM().then(channel => {
         channel.send(`Please accept the rules in the <#814614335744639058> channel by petting the :hedgehog: to access the rest of the LPD Discord Server.`);
     });
 });
 
 CLIENT.once('ready', () => {
-    CLIENT.user.setActivity('for /lpd help', { 'type': 3 });
+    DISCORD_UTILS.PresenceTracker.init(CLIENT);
+    SeenCommand.registerTracker(CLIENT);
+    QuorumCommand.registerTracker(CLIENT);
+    QuorumCommand.reloadManualTrackers(CLIENT);
+    PollCommand.reloadPolls(CLIENT);
+    BallotCommand.reloadBallots(CLIENT);
+    // voteData.forEach((vote, idx) => {
+    //     if (vote.voteId > voteId) voteId = vote.voteId+1;
+    //     if (new Date(vote.initDate) <= new Date()) {
+    //         CLIENT.guilds.fetch(vote.guild).then(guild => {
+    //             guild.channels.cache.get(vote.channel)
+    //                     .messages.fetch(vote.message).then(message => {
+    //                 if (!vote.question) registerBallotListener(message, vote);
+    //                 voteId++;
+    //             }, e => {
+    //                 if (!vote.question) displayBallotPoll(vote);
+    //                 voteId++;
+    //             });
+    //         });
+    //     }
+    // });
 
-    voteData.forEach((vote, idx) => {
-        CLIENT.guilds.fetch(vote.guild).then(guild => {
-            guild.channels.cache.get(vote.channel)
-                    .messages.fetch(vote.message).then(message => {
-                registerListener(message, vote);
-                voteId++;
-            }, e => {
-                displayPoll(voteData[idx]);
-            });
-        });
-    });
+    setInterval(() => {
+        CLIENT.user.setActivity('for /lpd help', { 'type': 3 });
+        PollCommand.voteData.filter(v => v.message === '-1' && v.question && new Date(v.initDate) <= new Date()).forEach(PollCommand.runSchedule(CLIENT));
+        BallotCommand.voteData.filter(v => v.message === '-1' && !v.question && new Date(v.initDate) <= new Date()).forEach(BallotCommand.runSchedule(CLIENT));
+    }, 30000);
 
-    if (!ruleData.length) console.log(`No rules message configured.\nLPD Bot Online.`);
-    else manageRules(ruleData[0].guildId, ruleData[0].channelId, ruleData[0].messageId).then(() => {
+    RulesCommand.reconnectRules(CLIENT).catch(() => {
+        console.log('Lost rules message!');
+    }).finally(() => {
         console.log('LPD Bot Online.');
     });
 });
 
-CLIENT.login(DISCORD_CREDS);
+CLIENT.login(CREDS.secret).catch(console.log);
