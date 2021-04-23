@@ -36,7 +36,7 @@ export default class RulesCommand extends BaseCommand {
     }
 
     static reconnectRules(client) {
-        return new Promise((resolve, reject) => {
+        return new Promise(resolve => {
             if (!ruleData.length) {
                 this.replaceRules(client, resolve);
             } else client.guilds.fetch(ruleData[0].guildId).then(guild => {

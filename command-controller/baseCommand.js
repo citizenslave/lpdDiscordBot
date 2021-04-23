@@ -4,7 +4,7 @@ import CREDS from '../constants/creds.js';
 import DISCORD_UTILS from '../utils/discord-utils.js';
 import COMMAND_MAP from './commandMapper.js';
 
-class BaseCommand {
+export default class BaseCommand {
     interaction;
     client;
 
@@ -113,5 +113,3 @@ class BaseCommand {
         if (cmdInstance.acked && !cmdInstance.completed) cmdInstance.complete();
     }
 }
-
-export default BaseCommand;
