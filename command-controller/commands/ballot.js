@@ -413,41 +413,43 @@ export default class BallotCommand extends BaseCommand {
         return {
             'handleMessage': (message) => {
                 const voteMsg = message.content.match(/WIV((\d+):.+): (.+)/);
-                if (voteMsg) {
-                    const vote = BallotCommand.voteData.filter(v => v.voteId.toString() === voteMsg[2])[0];
-                    if (vote) {
-                        if (vote.votes.find(v => v.user === message.author.id && v.candidate === voteMsg[3]))
-                            return (`You have already submitted a write in vote for ${voteMsg[3]}.  You `+
-                                    `cannot submit two for the same candidate.`);
-                        if (vote.candidates.includes(voteMsg[3]))
-                            return (`You are trying to submit a write in vote for a listed candidate.  Please `+
-                                    `vote using the reaction for that candidate.`)
-                        const wiv = vote.votes.filter(v => v.key === voteMsg[1])[0];
-                        if (wiv) {
-                            delete wiv.key;
-                            wiv.candidate = voteMsg[3];
-                            VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
-                            client.channels.fetch(vote.channel).then(channel => {
-                                channel.messages.fetch(vote.message).then(ballotMessage => {
-                                    const embedUpdate = new DISCORD.MessageEmbed(ballotMessage.embeds[0]);
-                                    const desc = embedUpdate.description.split('\n');
-                                    const tally = desc[desc.length-1].match(/^(\d+)\/(.+)$/);
-                                    if (vote.votes.filter(v => v.user === message.author.id).length === 1)
-                                        desc[desc.length-1] = `${Number(tally[1])+1}/${tally[2]}`;
-                                    embedUpdate.setDescription(desc.join('\n'));
-                                    if (!vote.secret) {
-                                        embedUpdate.fields[1].value = embedUpdate.fields[1].value.split('\n')
-                                                .map((t, idx, v) => idx === (v.length-2)?Number(t)+1:t).join('\n');
-                                    }
-                                    ballotMessage.edit(embedUpdate);
-                                });
-                            });
-                            return (`Your vote has been recorded.`+(vote.secret?`  No data has been saved linking `+
-                                    `your user information to your selection.`:``));
-                        } else return (`You sent me a vote, but I could not match the write in key.`);
-                    } else return (`You sent me a vote, but I couldn't find the ballot.`);
-                }
+                if (voteMsg) return this.processWriteInVote(message, voteMsg);
             }
         }
+    }
+
+    static processWriteInVote(message, voteMsg) {
+        const vote = BallotCommand.voteData.filter(v => v.voteId.toString() === voteMsg[2])[0];
+        if (vote) {
+            if (vote.votes.find(v => v.user === message.author.id && v.candidate === voteMsg[3]))
+                return (`You have already submitted a write in vote for ${voteMsg[3]}.  You `+
+                        `cannot submit two for the same candidate.`);
+            if (vote.candidates.includes(voteMsg[3]))
+                return (`You are trying to submit a write in vote for a listed candidate.  Please `+
+                        `vote using the reaction for that candidate.`)
+            const wiv = vote.votes.filter(v => v.key === voteMsg[1])[0];
+            if (wiv) {
+                delete wiv.key;
+                wiv.candidate = voteMsg[3];
+                VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
+                client.channels.fetch(vote.channel).then(channel => {
+                    channel.messages.fetch(vote.message).then(ballotMessage => {
+                        const embedUpdate = new DISCORD.MessageEmbed(ballotMessage.embeds[0]);
+                        const desc = embedUpdate.description.split('\n');
+                        const tally = desc[desc.length-1].match(/^(\d+)\/(.+)$/);
+                        if (vote.votes.filter(v => v.user === message.author.id).length === 1)
+                            desc[desc.length-1] = `${Number(tally[1])+1}/${tally[2]}`;
+                        embedUpdate.setDescription(desc.join('\n'));
+                        if (!vote.secret) {
+                            embedUpdate.fields[1].value = embedUpdate.fields[1].value.split('\n')
+                                    .map((t, idx, v) => idx === (v.length-2)?Number(t)+1:t).join('\n');
+                        }
+                        ballotMessage.edit(embedUpdate);
+                    });
+                });
+                return (`Your vote has been recorded.`+(vote.secret?`  No data has been saved linking `+
+                        `your user information to your selection.`:``));
+            } else return (`You sent me a vote, but I could not match the write in key.`);
+        } else return (`You sent me a vote, but I couldn't find the ballot.`);
     }
 }

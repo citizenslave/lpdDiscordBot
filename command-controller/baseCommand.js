@@ -76,6 +76,7 @@ export default class BaseCommand {
             if (typeof content === 'string') data['content'] = content;
             if (embeds instanceof Array) data['embeds'] = embeds;
             else if (embeds) data['embeds'] = [ embeds ];
+            if (data['embeds'] && data['content'] === 'done') delete data['content'];
         }
         
         return new Promise(resolve => {

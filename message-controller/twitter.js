@@ -1,10 +1,11 @@
 'use strict';
 
 import DISCORD from 'discord.js';
-import HTTPS from 'https';
 
 import CREDS from '../constants/creds.js';
 import ROLES from '../constants/roles.js';
+
+import UTILS from '../utils/utils.js';
 
 export default class TwitterSubmissionResponder {
     static handleMessage(message) {
@@ -19,6 +20,17 @@ export default class TwitterSubmissionResponder {
                     },
                     'cb': () => {}
                 };
+            }
+            if (message.attachments.size > 4) {
+                return {
+                    'msg': {
+                        'data': {
+                            'content': `Too many attachments. (${message.attachments.size}/4)`,
+                            'message_reference': { 'message_id': message.id }
+                        }
+                    },
+                    'cb': () => {}
+                }
             }
     
             message.react('👍');
@@ -39,7 +51,8 @@ export default class TwitterSubmissionResponder {
             const status = message.content.match(/https?:\/\/(www\.)?twitter.com\/.+\/status\/(\d+)/);
     
             guild.members.fetch(u.id).then(member => {
-                if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,] ])).size) return r.users.remove().catch();
+                if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,], [ROLES.SMM_DT,], [ROLES.STATE_BOARD,] ])).size)
+                    return r.users.remove().catch();
                 
                 const postData = {
                     'key': CREDS.webhook,
@@ -47,27 +60,22 @@ export default class TwitterSubmissionResponder {
                     'approver': u.id
                 };
     
-                if (status && status[0].length === message.content.length) {
-                    postData.rtId = status[2];
-                } else {
-                    Object.assign(postData, {
-                        'content': message.content,
-                        'attachment': message.attachments.array().map(a => { return { 'url': a.url } })
-                    });
-                    if (status) postData['containsTweet'] = true;
-                }
-    
-                const reqOpts = {
-                    'method': 'POST',
-                    'headers': {
-                        'Content-Type': 'application/json'
+                const attachments = message.attachments.map(a => UTILS.getHttpsRequest(a.url));
+                attachments.push(Promise.resolve());
+                
+                Promise.all(attachments).then(buffers => {
+                    if (status && status[0].length === message.content.length) {
+                        postData.rtId = status[2];
+                    } else {
+                        postData['content'] = message.content;
+                        if (buffers.length > 1) postData['attachments'] = buffers.filter(b => b).map(b => b.toString('base64'));
+                        if (status) postData['containsTweet'] = status[2];
                     }
-                };
-                const req = HTTPS.request('https://lpdelaware.api.stdlib.com/twitter-hook@dev/postTweet/', reqOpts, res => {
-                    console.log('Tweet Approved');
+
+                    UTILS.postHttpsRequest('https://lpdelaware.api.stdlib.com/twitter-hook@dev/postTweet/', postData).then(r => {
+                        console.log('Tweet Approved');
+                    });
                 });
-                req.write(JSON.stringify(postData));
-                req.end();
                 
                 collector.stop();
             });

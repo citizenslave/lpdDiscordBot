@@ -1,8 +1,8 @@
 'use strict';
 
-import HTTPS from 'https';
-
 import BaseCommand from '../baseCommand.js';
+
+import UTILS from '../../utils/utils.js';
 
 import CHANS from '../../constants/channels.js';
 import ROLES from '../../constants/roles.js';
@@ -22,38 +22,28 @@ export default class LegCommand extends BaseCommand {
             'pageSize': '1',
             'selectedGA[0]': Math.ceil(new Date().getFullYear()/2)-860
         };
-        const legSearchReq = HTTPS.request(LEG_SEARCH+params[1], {
-            'method': 'POST',
-            'headers': {
-                'Content-Type': 'application/json'
+
+        UTILS.postHttpsRequest(LEG_SEARCH+params[1], reqBody).then(legResponse => {
+            if (legResponse.Total > 1) return this.complete(`Ambiguous legislation identifier: ${params[1]}`);
+            if (legResponse.Total === 0) return this.complete(`Legislation not found: ${params[1]}`);
+            const newLegChannel = {
+                'type': 'text',
+                'parent': CHANS.LEG_CAT,
+                'topic': LEG_LINK+legResponse.Data[0].LegislationId,
+                'permissionOverwrites':[{
+                    'id': ROLES.GENERAL,
+                    'type': 'role',
+                    'deny': 0n,
+                    'allow': PERMS.PARTICIPANT_PERMS
+                }]
+            };
+            if (!existingChannel || existingChannel.topic !== newLegChannel.topic) {
+                this.guild.channels.create(legChannelName, newLegChannel).then(c => {
+                    this.complete(`Created new Legislation Channel: <#${c.id}>`);
+                });
+            } else {
+                this.complete(`Channel already exists: <#${existingChannel.id}>`);
             }
-        }, res => {
-            res.on('data', d => {
-                const legResponse = JSON.parse(d.toString());
-                if (legResponse.Total > 1) return this.complete(`Ambiguous legislation identifier: ${params[1]}`, true);
-                if (legResponse.Total === 0) return this.complete(`Legislation not found: ${params[1]}`, true);
-                const newLegChannel = {
-                    'type': 'text',
-                    'parent': CHANS.LEG_CAT,
-                    'topic': LEG_LINK+legResponse.Data[0].LegislationId,
-                    'permissionOverwrites':[{
-                        'id': ROLES.GENERAL,
-                        'type': 'role',
-                        'deny': 0n,
-                        'allow': PERMS.PARTICIPANT_PERMS
-                    }]
-                };
-                if (!existingChannel || existingChannel.topic !== newLegChannel.topic) {
-                    this.guild.channels.create(legChannelName, newLegChannel).then(c => {
-                        this.complete(`Created new Legislation Channel: <#${c.id}>`, true);
-                    });
-                } else {
-                    this.complete(`Channel already exists: <#${existingChannel.id}>`, true);
-                }
-            });
         });
-        legSearchReq.on('error', console.error);
-        legSearchReq.write(JSON.stringify(reqBody));
-        legSearchReq.end();
     }
 }
