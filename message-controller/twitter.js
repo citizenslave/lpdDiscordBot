@@ -7,10 +7,12 @@ import ROLES from '../constants/roles.js';
 
 import UTILS from '../utils/utils.js';
 
+const STATUS_LINK = /https?:\/\/(?:www\.)?twitter.com\/.+\/status\/(\d+)/;
+
 export default class TwitterSubmissionResponder {
     static handleMessage(message) {
         if (message.channel.id === '829194592938360842') {
-            if (message.content.length > 280) {
+            if (message.content.replace(STATUS_LINK, '').length > 280) {
                 return {
                     'msg': {
                         'data': {
@@ -48,7 +50,7 @@ export default class TwitterSubmissionResponder {
             const guild = r.message.channel.guild;
             const message = r.message;
             
-            const status = message.content.match(/https?:\/\/(www\.)?twitter.com\/.+\/status\/(\d+)/);
+            const status = message.content.match(STATUS_LINK);
     
             guild.members.fetch(u.id).then(member => {
                 if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,], [ROLES.SMM_DT,], [ROLES.STATE_BOARD,] ])).size)
@@ -65,15 +67,18 @@ export default class TwitterSubmissionResponder {
                 
                 Promise.all(attachments).then(buffers => {
                     if (status && status[0].length === message.content.length) {
-                        postData.rtId = status[2];
+                        postData.rtId = status[1];
                     } else {
                         postData['content'] = message.content;
                         if (buffers.length > 1) postData['attachments'] = buffers.filter(b => b).map(b => b.toString('base64'));
-                        if (status) postData['containsTweet'] = status[2];
+                        if (status) {
+                            postData['containsTweet'] = status[1];
+                            postData['content'] = postData['content'].replace(STATUS_LINK, '').trim();
+                        }
                     }
 
                     UTILS.postHttpsRequest('https://lpdelaware.api.stdlib.com/twitter-hook@dev/postTweet/', postData).then(r => {
-                        console.log('Tweet Approved');
+                        console.log('Tweet Approved', r || '');
                     });
                 });
                 
