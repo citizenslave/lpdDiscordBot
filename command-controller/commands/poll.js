@@ -11,6 +11,7 @@ import DISCORD_UTILS from '../../utils/discord-utils.js';
 import PERMS from '../../constants/permissions.js';
 import ROLES from '../../constants/roles.js';
 import CHANS from '../../constants/channels.js';
+import GMailer from '../../utils/mailer.js';
 
 const BOT_ROLES = [
     ROLES.LPD_BOT,
@@ -26,6 +27,7 @@ const RESPONSES = [ `:+1: - Aye - 0 votes in favor`,
 const INSTRUCTIONS = [ `:grey_question: - Show current votes`,
         `<:whip:830972517598494740> - Whip outstanding votes`,
         `:arrows_counterclockwise: - Move poll to bottom`,
+        `📨 - Close poll and publish result`,
         `:x: - Delete poll (DON'T)` ].join('\n');
 
 export default class PollCommand extends BaseCommand {
@@ -104,8 +106,9 @@ export default class PollCommand extends BaseCommand {
         } else if (!isNaN(polls)) {
             const pollData = PollCommand.voteData.find(v => v.message === '-1' && v.question && v.voteId === Number(polls));
             if (!pollData) return this.ephemeral(`Poll ${polls} not found.`);
-            const pollMsg = `${pollData.voteId} - ${pollData.question.replace(/url:(\[.+\])\(.+\) +(.+)/, '$2 $1')}: `+
-                    `${new Date(pollData.initDate).toLocaleString()}\n<#${pollData.channel}> ${pollData.roles.map(r => `<@&${r}>`)}`
+            const pollMsg = (`${pollData.voteId} - ${pollData.question.replace(/url:(\[.+\])\(.+\) +(.+)/, '$2 $1')}: `+
+                    `${new Date(pollData.initDate).toLocaleString()}\n<#${pollData.channel}> ${pollData.roles.map(r => `<@&${r}>`)}\n`+
+                    pollData.question.replace(/url:\[.+\]\((.+)\) +(.+)/, '$1')).trim();
             return this.ephemeral(pollMsg);
         } else return this.ephemeral(`Invalid poll id: ${polls}`);
     }
@@ -160,6 +163,7 @@ export default class PollCommand extends BaseCommand {
         message.react('❔');
         message.react(':whip:830972517598494740');
         message.react('🔄');
+        message.react('📨');
         message.react('❌');
     }
 
@@ -206,6 +210,7 @@ export default class PollCommand extends BaseCommand {
         r.message.delete({ "timeout": 1000 });
         PollCommand.voteData.filter((vote, idx) => vote.voteId !== voteDetails.voteId || PollCommand.voteData.splice(idx, 1));
         VOTE_PERSISTANCE.writeFile(PollCommand.voteData);
+        return tallyEmbed;
     }
 
     registerListener(message, voteDetails) {
@@ -224,8 +229,15 @@ export default class PollCommand extends BaseCommand {
                 if (!eligibleIds.includes(u.id) && (voteHash !== 'e29d94')) return;
                 const closingTime = new Date(voteDetails.doneDate);
                 const now = new Date();
-                if ((voteHash === 'e29d8c' && (u.id === guild.ownerID || members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR))) || now > closingTime) {
-                    this.deletePoll(r, voteDetails, members, channel);
+                if (((voteHash === 'e29d8c' || voteHash === 'f09f93a8') && (u.id === guild.ownerID || members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR))) || now > closingTime) {
+                    const resultEmbed = this.deletePoll(r, voteDetails, members, channel);
+                    if (voteHash !== 'e29d8c') {
+                        const roleNames = guild.roles.cache.filter(r => voteDetails.roles.includes(r.id)).map(r => r.name).join('/');
+                        const urlParts = resultEmbed.description && resultEmbed.description.match(/\[(.*)\]\((.*)\)/);
+                        const body = `<h3>${resultEmbed.title}</h3>${urlParts?`<a href="${urlParts[2]}">${urlParts[1]}</a>`:``}`+
+                                `<h4>${resultEmbed.fields[0].name}</h4>${resultEmbed.fields[0].value.replace(/\n/g, '<br/>')}`;
+                        GMailer.sendMail('lpdelaware@googlegroups.com', `[${roleNames} Poll] - ${resultEmbed.title}`, body);
+                    }
                 } else if (voteHash === '3c3a776869703a3833303937323531373539383439343734303e') {
                     let voteMsg = eligibleIds.filter(id => !voteDetails.votes.map(v => v.user).includes(id))
                             .map(id => `<@!${id}>`).join(', ') + `, your votes are pending.`;
@@ -298,7 +310,7 @@ export default class PollCommand extends BaseCommand {
     }
 
     static reloadPolls(client) {
-        this.voteData.filter(v => v.question).forEach(vote => {
+        this.voteData.filter(v => v.question && (new Date(v.initDate) <= new Date())).forEach(vote => {
             if (vote.voteId > voteId) voteId = vote.voteId+1;
             client.guilds.fetch(vote.guild).then(guild => {
                 guild.channels.cache.get(vote.channel)

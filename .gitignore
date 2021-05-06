@@ -1,1 +1,4 @@
 constants/creds.js
+data/credentials.json
+data/token.json
+node_modules/

@@ -21,7 +21,8 @@
   },
   "homepage": "https://github.com/citizenslave/lpdDiscordBot#readme",
   "dependencies": {
-    "discord.js": "^12.5.1"
+    "discord.js": "^12.5.1",
+    "googleapis": "^73.0.0"
   },
   "type": "module"
 }

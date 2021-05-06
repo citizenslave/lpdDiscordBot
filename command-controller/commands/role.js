@@ -8,7 +8,8 @@ import ROLES from '../../constants/roles.js';
 import PERMS from '../../constants/permissions.js';
 
 const TEMP_ROLES = [
-    ROLES.SB_GUESTS
+    ROLES.SB_GUESTS,
+    ROLES.DELEGATES
 ];
 
 export default class RoleCommand extends BaseCommand {
@@ -31,7 +32,7 @@ export default class RoleCommand extends BaseCommand {
     copyRole(dstRole, srcRole) {
         if ((!this.member.roles.includes(ROLES.STATE_BOARD) || !TEMP_ROLES.includes(dstRole)) &&
             !this.member.roles.includes(ROLES.ADMIN)) return this.ephemeral('No permission.');
-        this.ephemeral(null, true);
+        this.ack();
         this.guild.members.fetch().then(members => {
             const membersAdded = [];
             members.forEach(member => {
@@ -41,21 +42,21 @@ export default class RoleCommand extends BaseCommand {
                 }
             });
             const response = `Added members:\n${membersAdded.join('\n')}`;
-            this.ephemeral(response, true);
+            this.complete(response);
         });
     }
 
     assignUserToRole(role, user) {
         if ((!this.member.roles.includes(ROLES.STATE_BOARD) || !TEMP_ROLES.includes(role)) &&
             !this.member.roles.includes(ROLES.ADMIN)) return this.ephemeral('No permission.');
-        this.ephemeral(null, true);
+        this.ack();
         this.guild.members.fetch(user).then(member => {
             if (member.roles.cache.has(role)) {
                 member.roles.remove(role);
-                this.ephemeral('User role revoked', true);
+                this.complete('User role revoked');
             } else {
                 member.roles.add(role);
-                this.ephemeral('User role granted', true);
+                this.complete('User role granted');
             }
         });
     }
@@ -105,20 +106,20 @@ export default class RoleCommand extends BaseCommand {
     roleAction(role, action) {
         if ((!this.member.roles.includes(ROLES.STATE_BOARD) || !TEMP_ROLES.includes(role)) &&
             !this.member.roles.includes(ROLES.ADMIN)) return this.ephemeral('No permission.');
-        this.ephemeral(null, true);
+        this.ack();
         if (action === 'clear') {
             console.log(role, TEMP_ROLES)
-            if (!TEMP_ROLES.includes(role)) return this.ephemeral('Not a temp role.', true);
+            if (!TEMP_ROLES.includes(role)) return this.complete('Not a temp role.');
             this.guild.members.fetch().then(members => {
                 members.forEach(member => {
                     if (member.roles.cache.has(role)) member.roles.remove(role);
                 });
-                return this.ephemeral('Cleared role.', true);
+                return this.complete('Cleared role.');
             });
         } else if (action === 'list') {
             this.guild.members.fetch().then(members => {
                 const list = members.filter(m => m.roles.cache.has(role)).map(m => m.nickname || m.user.username).join('\n');
-                return this.ephemeral(`Members with role <@&${role}>:\n${list}`, true);
+                return this.complete(`Members with role <@&${role}>:\n${list}`);
             });
         }
     }

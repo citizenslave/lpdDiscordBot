@@ -8,7 +8,10 @@ const MEETING_INFO = {
     'NCC': [
         '__**New Castle County LP Monthly Members Meeting:**__',
         'DATE',
-        'Contact ncclp1776@gmail.com for Location Details and Zoom Link'
+        'McGlynns Pub',
+        '8 Polly Drummond Shopping Center',
+        'Newark, DE 19711',
+        'Contact ncclp1776@gmail.com for Zoom Link'
     ],
     'KENT': [
         '__**Kent County LP Monthly Meeting:**__',
@@ -27,7 +30,9 @@ const MEETING_INFO = {
     'NCC-SOC': [
         '__**New Castle County LP 2nd Thursday Social:**__',
         'DATE',
-        'Contact ncclp1776@gmail.com for Location Details'
+        'Home of <@725516776993062982>',
+        '119 George Ct.',
+        'Bear, DE 19701'
     ],
     'DISCORD': [
         '*Efforts are being made to connect all county meetings to the Discord server through a voice channel:*',

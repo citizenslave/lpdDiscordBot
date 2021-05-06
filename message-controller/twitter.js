@@ -4,6 +4,7 @@ import DISCORD from 'discord.js';
 
 import CREDS from '../constants/creds.js';
 import ROLES from '../constants/roles.js';
+import CHANS from '../constants/channels.js';
 
 import UTILS from '../utils/utils.js';
 
@@ -11,7 +12,7 @@ const STATUS_LINK = /https?:\/\/(?:www\.)?twitter.com\/.+\/status\/(\d+)/;
 
 export default class TwitterSubmissionResponder {
     static handleMessage(message) {
-        if (message.channel.id === '829194592938360842') {
+        if (message.channel.id === CHANS.TWITTER_CHAN) {
             if (message.content.replace(STATUS_LINK, '').length > 280) {
                 return {
                     'msg': {

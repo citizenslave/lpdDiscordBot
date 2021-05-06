@@ -17,6 +17,9 @@ import RealLibertarianResponder from './message-controller/libertarian.js';
 import DonateResponder from './message-controller/donate.js';
 import Reactor from './message-controller/reactor.js';
 import TwitterSubmissionResponder from './message-controller/twitter.js';
+import ConventionTracker from './custom-events/convention-tracker.js';
+
+import GMailer from './utils/mailer.js';
 
 const BaseCommand = COMMAND_MAPPER['lpd']['ping']['class'];
 const RulesCommand = COMMAND_MAPPER['lpd']['rules']['class'];
@@ -65,7 +68,10 @@ CLIENT.ws.on('INTERACTION_CREATE', async interaction => {
     BaseCommand.runCommand(interaction, CLIENT);
 });
 
+CLIENT.on('voiceStateUpdate', ConventionTracker.updateRole);
+
 CLIENT.once('ready', () => {
+    GMailer.MailerFactory();
     DISCORD_UTILS.PresenceTracker.init(CLIENT);
     SeenCommand.registerTracker(CLIENT);
     QuorumCommand.registerTracker(CLIENT);
@@ -81,14 +87,15 @@ CLIENT.once('ready', () => {
     MESSAGE_HANDLERS.push(DonateResponder);
     MESSAGE_HANDLERS.push(TwitterSubmissionResponder);
     MESSAGE_HANDLERS.push(new Reactor(CLIENT));
+    MESSAGE_HANDLERS.push(ConventionTracker);
 
     DM_HANDLERS.push(BallotCommand.generateWriteInHandler(CLIENT));
 
     setInterval(() => {
         CLIENT.user.setActivity('for /lpd help', { 'type': 3 });
-        PollCommand.voteData.filter(v => v.message === '-1' && v.question && new Date(v.initDate) <= new Date())
+        PollCommand.voteData.filter(v => v.message === '-1' && v.question && (new Date(v.initDate) <= new Date()))
                 .forEach(PollCommand.runSchedule(CLIENT));
-        BallotCommand.voteData.filter(v => v.message === '-1' && !v.question && new Date(v.initDate) <= new Date())
+        BallotCommand.voteData.filter(v => v.message === '-1' && !v.question && (new Date(v.initDate) <= new Date()))
                 .forEach(BallotCommand.runSchedule(CLIENT));
     }, 30000);
 

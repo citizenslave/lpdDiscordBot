@@ -1,5 +1,6 @@
 'use strict';
 
+import DISCORD from 'discord.js';
 import CREDS from '../constants/creds.js';
 import DISCORD_UTILS from '../utils/discord-utils.js';
 import COMMAND_MAP from './commandMapper.js';
@@ -75,7 +76,7 @@ export default class BaseCommand {
         else {
             if (typeof content === 'string') data['content'] = content;
             if (embeds instanceof Array) data['embeds'] = embeds;
-            else if (embeds) data['embeds'] = [ embeds ];
+            else if (embeds instanceof DISCORD.MessageEmbed) data['embeds'] = [ embeds ];
             if (data['embeds'] && data['content'] === 'done') delete data['content'];
         }
         

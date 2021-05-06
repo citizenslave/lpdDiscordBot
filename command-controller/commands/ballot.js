@@ -13,6 +13,8 @@ import PERMS from '../../constants/permissions.js';
 import ROLES from '../../constants/roles.js';
 import CHANS from '../../constants/channels.js';
 
+import GMailer from '../../utils/mailer.js';
+
 const BOT_ROLES = [
     ROLES.LPD_BOT,
     ROLES.STATE_CHAIR
@@ -21,10 +23,59 @@ const BOT_ROLES = [
 let voteId = 0;
 const VOTE_PERSISTANCE = new FilePersistenceEngine('./data/storage/ballotData');
 const SELECTIONS = [ '🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯', '🇰', '🇱', '🇲', '🇳', '🇴', '🇵', '🇶', '🇷', '🇸', '🇹', '🇺', '🇻', '🇼', '🇽', '🇾', '🇿' ];
-const INSTRUCTIONS = [ `:grey_question: - Show current votes`,
-        `<:whip:830972517598494740> - Whip outstanding votes`,
-        `:arrows_counterclockwise: - Move poll to bottom`,
-        `:x: - Delete poll (DON'T)` ].join('\n');
+const HASHES = [
+    'f09f87a6', 'f09f87a7', 'f09f87a8', 'f09f87a9',
+    'f09f87aa', 'f09f87ab', 'f09f87ac', 'f09f87ad',
+    'f09f87ae', 'f09f87af', 'f09f87b0', 'f09f87b1',
+    'f09f87b2', 'f09f87b3', 'f09f87b4', 'f09f87b5',
+    'f09f939d', 'f09f9aab'
+];
+const INSTRUCTIONS = [
+    `:grey_question: - Show current votes`,
+    `<:whip:830972517598494740> - Whip outstanding votes`,
+    `:arrows_counterclockwise: - Move poll to bottom`,
+    `📨 - Close poll and publish result`,
+    `:x: - Delete poll (DON'T)`
+].join('\n');
+const PVT_INSTRUCTIONS = '📝 - Request Ballot\n'+INSTRUCTIONS;
+const PVT_APPROVAL_BALLOT_INSTRUCTIONS = [
+    `🇦 - Select or remove candidates`,
+    `📝 - Submit write in votes`,
+    `🚫 - Clears all votes, selects NOTA`,
+    `✅ - Submit ballot`,
+    `:x: - Cancel ballot`,
+    ``,
+    `This is an approval ballot, so you may select multiple options.  Clearing your initial reaction will remove that candidate from your ballot, except `+
+    `for write in votes.  In order to clear write in votes you must clear all votes by selecting the 🚫 reaction.  To submit multiple write in votes you must `+
+    `clear and re-add the 📝 reaction.  This is a secret ballot, so your votes are not tied to your Discord user once they are submitted and cannot be changed.\n\n`+
+    `Pay no mind to the reaction counters.  The Bot cannot reset them in a DM channel.`
+].join('\n');
+const RCV_BALLOT_INSTRUCTIONS = [
+    `🇦 - Select or remove candidates`,
+    `📝 - Submit write in votes`,
+    `🚫 - Clears all votes, selects NOTA`,
+    `✅ - Submit ballot`,
+    `:x: - Cancel ballot`,
+    ``,
+    `This is an ranked choice ballot, so you may select multiple options.  Clearing your initial reaction will remove that candidate from your ballot, except `+
+    `for write in votes.  In order to clear write in votes you must clear all votes by selecting the 🚫 reaction.  To submit multiple write in votes you must `+
+    `clear and re-add the 📝 reaction.  Candidates are ranked in the order they are added, so to lower the ranking of a candidate you must remove them and then `+
+    `re-add them in the correct order.  This is a secret ballot, so your votes are not tied to your Discord user once they are submitted and cannot be changed.\n\n`+
+    `Pay no mind to the reaction counters.  The Bot cannot reset them in a DM channel.`
+].join('\n');
+const PVT_RCV_BALLOT_INSTRUCTIONS = [
+    `🇦 - Select or remove candidates`,
+    `📝 - Submit write in votes`,
+    `🚫 - Clears all votes, selects NOTA`,
+    `✅ - Submit ballot`,
+    `:x: - Cancel ballot`,
+    ``,
+    `This is an ranked choice ballot, so you may select multiple options.  Clearing your initial reaction will remove that candidate from your ballot, except `+
+    `for write in votes.  In order to clear write in votes you must clear all votes by selecting the 🚫 reaction.  To submit multiple write in votes you must `+
+    `clear and re-add the 📝 reaction.  Candidates are ranked in the order they are added, so to lower the ranking of a candidate you must remove them and then `+
+    `re-add them in the correct order.  This is a secret ballot, so your votes are not tied to your Discord user once they are submitted and cannot be changed.\n\n`+
+    `Pay no mind to the reaction counters.  The Bot cannot reset them in a DM channel.`
+].join('\n');
 
 export default class BallotCommand extends BaseCommand {
     static voteData = VOTE_PERSISTANCE.readFile().filter(v => !v.question);
@@ -33,14 +84,16 @@ export default class BallotCommand extends BaseCommand {
         const type = [];
         if (!isSecret) type.push('NOT SECRET');
         if (isApproval) type.push('APPROVAL');
+        const privateBallot = (isSecret && isApproval)
 
         const candidateFields = [{ 'name': 'Candidates:', 'value': candidates, 'inline': !isSecret }];
         if (!isSecret) candidateFields.push({ 'name': 'Votes:', 'value': new Array(candidates.split('\n').length).fill(0).join('\n'), 'inline': true });
+        const instructions = privateBallot?PVT_INSTRUCTIONS:INSTRUCTIONS;
         return new DISCORD.MessageEmbed()
                 .setTitle(`Vote for ${position}:${type.length?`\n*(${type.join('/')})*`:''}`)
                 .setDescription(this.getDescriptionText(url, doneDate))
                 .addFields(candidateFields)
-                .addField('Instructions:', (isApproval?'🚫 - Clears all votes, selects NOTA.\n':'')+INSTRUCTIONS);
+                .addField('Instructions:', ((isApproval && !isSecret)?'🚫 - Clears all votes, selects NOTA\n':'')+instructions);
     }
 
     static getDescriptionText(url, doneDate) {
@@ -63,7 +116,7 @@ export default class BallotCommand extends BaseCommand {
         if (params[14]) return this.listPolls(params[14]);
         if (params[15]) return this.cancelPoll(params[15]);
 
-        if (params[10] !== 'false' && params[12] === 'true') return this.ephemeral(`<@!816085452091424799> does not currently support secret approval voting.`)
+        // if (params[10] !== 'false' && (params[12] === 'true')) return this.ephemeral(`<@!816085452091424799> does not currently support secret approval voting.`)
 
         const initDate = this.getInitDate(params);
         if (isNaN(initDate)) return;
@@ -184,7 +237,7 @@ export default class BallotCommand extends BaseCommand {
                 const now = new Date();
                 const closingDate = new Date(voteDetails.doneDate);
 
-                if ((voteHash === 'e29d8c' && (members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR) || u.id === guild.ownerID)) || now > closingDate) {
+                if (((voteHash === 'e29d8c' || voteHash === 'f09f93a8') && (members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR) || u.id === guild.ownerID)) || now > closingDate) {
                     voteDetails.votes.forEach(vote => vote.candidate?votes[vote.voteHash]++:0);
 
                     const totalVotes = voteDetails.votes.filter(v => v.candidate).length;
@@ -224,6 +277,14 @@ export default class BallotCommand extends BaseCommand {
 
                     r.message.delete({ 'timeout': 1000 }).catch(console.log);
                     channel.send(results).catch(console.log);
+                    if (voteHash !== 'e29d8c') {
+                        const roleNames = guild.roles.cache.filter(r => voteDetails.roles.includes(r.id)).map(r => r.name).join('/');
+                        const urlParts = results.description && results.description.match(/\[(.*)\]\((.*)\)/);
+                        const body = `<h3>${results.title}</h3>${urlParts?`<a href="${urlParts[2]}">${urlParts[1]}</a><br/>`:``}`+
+                                `Total Votes: ${totalVotes}<h4>${results.fields[0].name}</h4>`+
+                                `${results.fields[0].value.replace(/\n/g, '<br/>').replace(/__\*\*(.*)\*\*__/, '<u><strong>$1</strong></u>')}`;
+                        GMailer.sendMail('lpdelaware@googlegroups.com', `[${roleNames} Poll] - ${results.title}`, body);
+                    }
                 } else if (voteHash === '3c3a776869703a3833303937323531373539383439343734303e') {
                     const awaitingMsg = eligibleIds.filter(u => !voteDetails.voters.includes(u))
                             .map(u => `<@!${u}>`).join(', ') + ', your votes are pending.';
@@ -235,8 +296,10 @@ export default class BallotCommand extends BaseCommand {
                             .map(u => `${members.get(u).nickname || members.get(u).user.username}`).join('\n');
                     const voteInfo = voteDetails.secret?null:voteDetails.votes.filter(v => v.candidate)
                             .map(v => `${members.get(v.user).nickname || members.get(v.user).user.username} - ${v.candidate}`).join('\n');
+                    const findUrl = voteDetails.position.match(/(url:\[.+\]\(.+\)) (.+)/) || [, , voteDetails.position];
                     const awaitingEmbed = new DISCORD.MessageEmbed()
-                            .setTitle(`Balloting for ${voteDetails.position}:`)
+                            .setTitle(`Balloting for ${findUrl[2]}:`)
+                            .setDescription(`${(findUrl[1] || ``).substr(4)}\nAs of ${new Date().toLocaleString()}`)
                             .addField('Awaiting Votes from:', awaitingMsg || 'none');
                     if (!voteDetails.secret) awaitingEmbed.addField('Votes:',  voteInfo || 'No votes received.');
                     if (!eligibleIds.includes(u.id)) u.createDM().then(channel => {
@@ -272,27 +335,34 @@ export default class BallotCommand extends BaseCommand {
                             }
                         }
                         if (voteHash !== 'f09f9aab') {
-                            voteDetails.votes = voteDetails.votes.filter(v => v.user === u.id && v.voteHash !== 'f09f9aab');
+                            voteDetails.votes = voteDetails.votes.filter(v => (v.user === u.id && v.voteHash !== 'f09f9aab') || v.user !== u.id);
                         }
                     }
-                    if (!removeFlag && (!voteDetails.approval || !voteDetails.voters.includes(u.id))) voteDetails.voters.push(u.id);
+                    const privateBallot = voteDetails.approval && voteDetails.secret;
+                    if (!removeFlag && (!voteDetails.approval || !voteDetails.voters.includes(u.id)) && !privateBallot) voteDetails.voters.push(u.id);
 
                     const embedUpdate = new DISCORD.MessageEmbed(message.embeds[0]);
                     const vote = { 'voteHash': voteHash };
                     vote['candidate'] = voteDetails.candidates.filter((c, idx) => Object.keys(votes)[idx] === voteHash)[0];
                     if (!voteDetails.secret) vote['user'] = u.id;
 
-                    if (voteHash === 'f09f939d') {
+                    if (voteHash === 'f09f939d' && !(voteDetails.secret && voteDetails.approval)) {
                         vote['key'] = voteDetails.voteId+':'+CRYPTO.randomBytes(4).toString('hex');
                         u.createDM().then(channel => {
                             channel.send(`You have selected the "Write In" option on the ballot for ${voteDetails.position}.  You `+
                                     `have been assigned a vote key of **WIV${vote['key']}**.\n\nPlease reply with your selection `+
                                     `using the following syntax to ensure your vote is tabulated correctly:\n\`WIV${vote['key']}: Jamie Doe\``);
                         });
+                    } else if (voteHash === 'f09f939d' && (voteDetails.secret && voteDetails.approval)) {
+                        u.createDM().then(channel => {
+                            channel.send(this.createPrivateBallot(voteDetails)).then(ballotMsg => {
+                                this.supportPrivateBallot(ballotMsg, voteDetails);
+                            });
+                        });
                     } else if (voteHash === 'f09f9aab') {
                         vote['candidate'] = 'None of the Above';
                     }
-                    if (!removeFlag) voteDetails.votes.push(vote);
+                    if (!removeFlag && !(voteDetails.secret && voteDetails.approval)) voteDetails.votes.push(vote);
 
                     if (!voteDetails.secret) {
                         voteDetails.votes.forEach(vote => vote.candidate?votes[vote.voteHash]++:0);
@@ -305,7 +375,7 @@ export default class BallotCommand extends BaseCommand {
 
                     VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
                     const description = embedUpdate.description.split('\n');
-                    description[description.length-1] = `${voteDetails.voters.length}/${eligibleIds.length} eligible votes.`
+                    description[description.length-1] = `(${voteDetails.voters.length}/${eligibleIds.length}) eligible votes.`
                     embedUpdate.setDescription(description.join('\n'));
                     r.message.edit(embedUpdate).catch(console.log);
                 }
@@ -356,12 +426,15 @@ export default class BallotCommand extends BaseCommand {
         voteDetails.message = freshMsg.id;
         VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
 
-        for (let idx=0; idx<voteDetails.candidates.length; idx++) freshMsg.react(SELECTIONS[idx]);
+        const privateBallot = voteDetails.secret && (voteDetails.approval);
+
+        if (!privateBallot) for (let idx=0; idx<voteDetails.candidates.length; idx++) freshMsg.react(SELECTIONS[idx]);
         freshMsg.react('📝');
-        freshMsg.react('🚫');
+        if (!privateBallot) freshMsg.react('🚫');
         freshMsg.react('❔');
         freshMsg.react(':whip:830972517598494740');
         freshMsg.react('🔄');
+        freshMsg.react('📨');
         freshMsg.react('❌');
                     
         freshMsg.pin().then(pinMsg => {
@@ -373,13 +446,96 @@ export default class BallotCommand extends BaseCommand {
         });
     }
 
+    createPrivateBallot(voteDetails) {
+        const findUrl = voteDetails.position.match(/(url:\[.+\]\(.+\)) (.+)/) || [, , voteDetails.position];
+        const doneDate = new Date(voteDetails.doneDate);
+        const closeString = [
+            `Closes ${doneDate.toLocaleDateString()}`,
+            `${doneDate.toLocaleTimeString(undefined, { 'timeZoneName': 'short' })}`
+        ].join(' @ ');
+        const candidates = voteDetails.candidates.map((candidate, idx) => `${SELECTIONS[idx]} - ${candidate}`).join('\n')
+                +`\n📝 - Write In\n🚫 - None of the Above`;
+        return new DISCORD.MessageEmbed()
+                .setTitle(`Secret ${'approval'} ballot for: ${findUrl[2]}`)
+                .setDescription(`${(findUrl[1] || '').substr(4)}\n${closeString}`.trim())
+                .addField('Candidates:', candidates)
+                .addField('Instructions:', PVT_APPROVAL_BALLOT_INSTRUCTIONS);
+    }
+
+    supportPrivateBallot(ballotMsg, voteDetails) {
+        for (let idx=0; idx<voteDetails.candidates.length; idx++) ballotMsg.react(SELECTIONS[idx]);
+        ballotMsg.react('📝');
+        ballotMsg.react('🚫');
+        ballotMsg.react('✅');
+        ballotMsg.react('❌');
+
+        if (!voteDetails.ballots) voteDetails.ballots = [];
+        const invalidatedBallot = voteDetails.ballots.find(b => b.user === ballotMsg.channel.recipient.id);
+        if (invalidatedBallot) invalidatedBallot.message = ballotMsg.id;
+        else voteDetails.ballots.push({ 'user': ballotMsg.channel.recipient.id, 'message': ballotMsg.id });
+        VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
+
+        this.connectBallot(ballotMsg, voteDetails);
+    }
+
+    connectBallot(ballotMsg, voteDetails) {
+        ballotMsg.createReactionCollector(() => true, { 'dispose': true })
+                .on('collect', this.handlePvtBallotReact('collect', ballotMsg, voteDetails))
+                .on('remove', this.handlePvtBallotReact('remove', ballotMsg, voteDetails));
+    }
+
+    handlePvtBallotReact(event, ballotMsg, voteDetails) {
+        return (r, u) => {
+            if (u.bot) return;
+            const hash = Buffer.from(r.emoji.toString()).toString('hex');
+            if (hash === 'e29d8c') {
+                voteDetails.ballots = voteDetails.ballots.filter(b => b.user !== ballotMsg.channel.recipient.id && b.message !== ballotMsg.id)
+                ballotMsg.delete({ 'timeout': 1000 });
+                ballotMsg.channel.send(`Ballot canceled.  You may request another one.`);
+                VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
+            } else if (hash === 'e29c85') {
+                this.submitBallot(ballotMsg, voteDetails);
+            } else if (hash === 'f09f9aab') {
+                const embed = new DISCORD.MessageEmbed(ballotMsg.embeds[0]);
+                embed.fields[0].value = voteDetails.candidates.map((candidate, idx) => `${SELECTIONS[idx]} - ${candidate}`).join('\n')
+                        +`\n📝 - Write In\n🚫 - **None of the Above**`;
+                ballotMsg.edit(embed);
+            } else if (hash === 'f09f939d') {
+                const embed = new DISCORD.MessageEmbed(ballotMsg.embeds[0]);
+                //write in
+            } else {
+                const embed = new DISCORD.MessageEmbed(ballotMsg.embeds[0]);
+                const candidateIndex = HASHES.findIndex(h => h === hash);
+                const candidates = embed.fields[0].value.split('\n');
+                const approvedCandidate = `${SELECTIONS[candidateIndex]} - **${voteDetails.candidates[candidateIndex]}**`;
+                if (candidates[candidateIndex] !== approvedCandidate) candidates[candidateIndex] = approvedCandidate;
+                else candidates[candidateIndex] = candidates[candidateIndex].replace(/\*/g, '');
+                candidates[candidates.length-1] = candidates[candidates.length-1].replace(/\*/g, '');
+                embed.fields[0].value = candidates.join('\n');
+                ballotMsg.edit(embed);
+            }
+        }
+    }
+
+    submitBallot(ballotMsg, voteDetails) {}
+
     static reloadBallots(client) {
-        this.voteData.filter(v => !v.question).forEach(vote => {
+        this.voteData.filter(v => !v.question && (new Date(v.initDate) <= new Date())).forEach(vote => {
             if (vote.voteId > voteId) voteId = vote.voteId+1;
             client.guilds.fetch(vote.guild).then(guild => {
                 guild.channels.cache.get(vote.channel)
                         .messages.fetch(vote.message).then(message => {
-                    this.generateCommand(vote, client).registerListener(message, vote);
+                    const cmd = this.generateCommand(vote, client);
+                    cmd.registerListener(message, vote);
+                    if (vote.ballots) vote.ballots.forEach(b => {
+                        guild.members.fetch(b.user).then(member => {
+                            member.createDM().then(dm => {
+                                dm.messages.fetch(b.message).then(ballot => {
+                                    cmd.connectBallot(ballot, vote);
+                                });
+                            });
+                        });
+                    });
                     voteId++;
                 }).catch(e => {
                     this.generateCommand(vote, client).displayBallot(vote)
@@ -413,12 +569,12 @@ export default class BallotCommand extends BaseCommand {
         return {
             'handleMessage': (message) => {
                 const voteMsg = message.content.match(/WIV((\d+):.+): (.+)/);
-                if (voteMsg) return this.processWriteInVote(message, voteMsg);
+                if (voteMsg) return this.processWriteInVote(message, voteMsg, client);
             }
         }
     }
 
-    static processWriteInVote(message, voteMsg) {
+    static processWriteInVote(message, voteMsg, client) {
         const vote = BallotCommand.voteData.filter(v => v.voteId.toString() === voteMsg[2])[0];
         if (vote) {
             if (vote.votes.find(v => v.user === message.author.id && v.candidate === voteMsg[3]))

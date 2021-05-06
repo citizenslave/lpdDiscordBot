@@ -9,7 +9,6 @@ import PERMS from '../../constants/permissions.js';
 
 export default class LockCommand extends BaseCommand {
     execute(params) {
-        console.log(params)
         const lockChannel = this.guild.channels.cache.get(params[1]);
         if (!lockChannel) return this.ephemeral(`Cannot find channel: <#${params[1]}>`);
         lockChannel.overwritePermissions(lockChannel.permissionOverwrites.map(overwrite => {
@@ -19,6 +18,8 @@ export default class LockCommand extends BaseCommand {
             lockChannel.setParent(CHANS.LEG_ARCH_CAT, { 'lockPermissions': false });
         } else if (lockChannel.parent.id === CHANS.EXEC_SESSION_CAT) {
             lockChannel.setParent(CHANS.EXEC_ARCH_CAT, { 'lockPermissions': false });
+        } else {
+            lockChannel.setParent(CHANS.ARCHIVES_CAT, { 'lockPermissions': false });
         }
         lockChannel.send(`This channel was locked on ${new Date().toLocaleString()}.`);
         this.ephemeral(`Locked channel: ${lockChannel.name}`);
