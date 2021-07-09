@@ -6,7 +6,8 @@ import ROLES from '../constants/roles.js';
 import CHANS from '../constants/channels.js';
 
 const DELEGATES_PERSISTANCE = new FilePersistenceEngine('./data/storage/delegates');
-const DELEGATES_LIST = DELEGATES_PERSISTANCE.readFile();
+
+const VOTE_PERSISTANCE = new FilePersistenceEngine('./data/storage/ballotData');
 
 const COUNTIES = /(?:^s$|sussex)|(?:^k$|kent)|(?:^n$|new *castle)/i
 
@@ -21,7 +22,7 @@ export default class ConventionTracker {
             message.react('👍');
             message.react('🇳');
             message.react('🇰');
-            message.react('🇸')
+            message.react('🇸');
             message.react('👎');
 
             this.approveDelegate(message);
@@ -39,6 +40,7 @@ export default class ConventionTracker {
             }
             
             if (response === 'f09f918d') {
+                const DELEGATES_LIST = DELEGATES_PERSISTANCE.readFile();
                 DELEGATES_LIST.push(message.author.id);
                 DELEGATES_PERSISTANCE.writeFile(DELEGATES_LIST);
                 if (message.member.voice && message.member.voice.channelID) message.member.voice.setChannel(CHANS.CONVENTION_CHAN);
@@ -56,20 +58,53 @@ export default class ConventionTracker {
     }
 
     static updateRole(o, n) {
-        if (n.member.roles.cache.has(ROLES.DELEGATES)) {
-            if (!n.selfVideo || n.channelID !== CHANS.CONVENTION_CHAN) {
-                n.member.roles.remove(ROLES.DELEGATES);
-                if (n.channelID && n.channelID === CHANS.CONVENTION_CHAN) n.setMute(true);
-                DELEGATES_LIST.push(n.member.id);
-                DELEGATES_PERSISTANCE.writeFile(DELEGATES_LIST);
-            }
-        } else if (n.channelID === CHANS.CONVENTION_CHAN && n.selfVideo) {
-            if (DELEGATES_LIST.includes(n.member.id)) {
+        if (o.channelID === n.channelID && o.selfVideo === n.selfVideo) return;
+        const DELEGATES_LIST = DELEGATES_PERSISTANCE.readFile();
+        if (n.channelID) {
+            if (n.selfVideo && n.channelID === CHANS.CONVENTION_CHAN && (n.member.roles.cache.has(ROLES.DELEGATES) || DELEGATES_LIST.includes(n.member.id))) {
+                console.log('ADD');
                 n.member.roles.add(ROLES.DELEGATES);
                 n.setMute(false);
-                DELEGATES_LIST.splice(DELEGATES_LIST.findIndex(d => d === n.member.id), 1);
-                DELEGATES_PERSISTANCE.writeFile(DELEGATES_LIST);
+                const ballots = VOTE_PERSISTANCE.readFile();
+                ballots.forEach(b => {
+                    if (b.channel !== CHANS.CONVENTION_BUS_CHAN) return;
+                    const channel = n.guild.channels.resolve(CHANS.CONVENTION_BUS_CHAN);
+                    const message = channel.messages.resolve(b.message);
+                    const embed = message.embeds[0];
+                    
+                    const desc = embed.description.split('\n');
+                    const tally = desc[desc.length-1].match(/^\((\d+)\/(.+)\) eligible votes.$/);
+                    desc[desc.length-1] = `(${tally[1]}/${Number(tally[2])+1}) eligible votes.`;
+                    embed.setDescription(desc.join('\n'));
+                    message.edit(embed);
+                });
+                return;
             }
+            if (n.channelID === CHANS.CONVENTION_CHAN) {
+                n.setMute(true);
+            } else {
+                n.setMute(false);
+            }
+        }
+        if (n.member.roles.cache.has(ROLES.DELEGATES)) {
+            n.member.roles.remove(ROLES.DELEGATES);
+            const ballots = VOTE_PERSISTANCE.readFile();
+            ballots.forEach(b => {
+                if (b.channel !== CHANS.CONVENTION_BUS_CHAN) return;
+                console.log(b.question);
+                const channel = n.guild.channels.resolve(CHANS.CONVENTION_BUS_CHAN);
+                const message = channel.messages.resolve(b.message);
+                const embed = message.embeds[0];
+                
+                const desc = embed.description.split('\n');
+                const tally = desc[desc.length-1].match(/^\((\d+)\/(.+)\) eligible votes.$/);
+                desc[desc.length-1] = `(${tally[1]}/${Number(tally[2])-1}) eligible votes.`;
+                embed.setDescription(desc.join('\n'));
+                message.edit(embed);
+            });
+            if (DELEGATES_LIST.includes(n.member.id)) return;
+            DELEGATES_LIST.push(n.member.id);
+            DELEGATES_PERSISTANCE.writeFile(DELEGATES_LIST);
         }
     }
 }

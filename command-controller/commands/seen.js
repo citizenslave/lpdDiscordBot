@@ -8,11 +8,22 @@ export default class SeenCommand extends BaseCommand {
     static presenceData;
 
     execute(params) {
-        const presence = this.guild.presences.cache.get(params[1]);
-        if (presence && presence.status === 'online') return this.ephemeral(`<@!${params[1]}> is online now.`);
-        const lastPresence = SeenCommand.lastSeen(params[1]);
-        if (!lastPresence) return this.ephemeral(`<@!${params[1]}> hasn't been seen...`);
-        this.ephemeral(`<@${params[1]}> was last seen ${lastPresence.toLocaleString()}`)
+        if (params[2]) this.complete(this.seenRole(params[2]));
+        else this.ephemeral(this.seenUser(params[1]));
+    }
+
+    seenRole(roleId) {
+        this.ack();
+        const members = this.guild.roles.resolve(roleId).members;
+        return members.map(m => this.seenUser(m.user.id)).join('\n');
+    }
+
+    seenUser(memberId) {
+        const presence = this.guild.presences.cache.get(memberId);
+        if (presence && presence.status === 'online') return `<@!${memberId}> is online now.`;
+        const lastPresence = SeenCommand.lastSeen(memberId);
+        if (!lastPresence) return `<@!${memberId}> hasn't been seen...`;
+        return `<@${memberId}> was last seen ${lastPresence.toLocaleString()}`;
     }
 
     static lastSeen(memberId) {

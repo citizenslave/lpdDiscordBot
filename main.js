@@ -3,6 +3,7 @@
 import DISCORD from 'discord.js';
 
 import DISCORD_UTILS from './utils/discord-utils.js';
+import GMailer from './utils/mailer.js';
 
 import COMMAND_MAPPER from './command-controller/commandMapper.js';
 
@@ -11,15 +12,16 @@ import ROLES from './constants/roles.js';
 import CHANS from './constants/channels.js';
 
 import TaxationResponder from './message-controller/taxation.js';
-import SeanLoveResponder from './message-controller/sean.js';
+import LoveResponder from './message-controller/love.js';
 import HypnoToadResponder from './message-controller/hypnotoad.js';
 import RealLibertarianResponder from './message-controller/libertarian.js';
 import DonateResponder from './message-controller/donate.js';
 import Reactor from './message-controller/reactor.js';
 import TwitterSubmissionResponder from './message-controller/twitter.js';
-import ConventionTracker from './custom-events/convention-tracker.js';
+import MessagePinner from './message-controller/pin.js';
 
-import GMailer from './utils/mailer.js';
+import ConventionTracker from './custom-events/convention-tracker.js';
+import FacebookSubmissionResponder from './message-controller/facebook.js';
 
 const BaseCommand = COMMAND_MAPPER['lpd']['ping']['class'];
 const RulesCommand = COMMAND_MAPPER['lpd']['rules']['class'];
@@ -81,13 +83,15 @@ CLIENT.once('ready', () => {
     RulesCommand.reconnectRules(CLIENT);
 
     MESSAGE_HANDLERS.push(TaxationResponder);
-    MESSAGE_HANDLERS.push(SeanLoveResponder);
+    MESSAGE_HANDLERS.push(LoveResponder);
     MESSAGE_HANDLERS.push(HypnoToadResponder);
     MESSAGE_HANDLERS.push(RealLibertarianResponder);
     MESSAGE_HANDLERS.push(DonateResponder);
     MESSAGE_HANDLERS.push(TwitterSubmissionResponder);
+    MESSAGE_HANDLERS.push(FacebookSubmissionResponder);
     MESSAGE_HANDLERS.push(new Reactor(CLIENT));
     MESSAGE_HANDLERS.push(ConventionTracker);
+    MESSAGE_HANDLERS.push(MessagePinner);
 
     DM_HANDLERS.push(BallotCommand.generateWriteInHandler(CLIENT));
 

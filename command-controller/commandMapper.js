@@ -495,15 +495,20 @@ export default {
         'seen': {
             'page': 1,
             'perm': [],
-            'validator': /^<@!?(\d+)>$/,
-            'desc': `Displays the last time \`user\` was online.`,
-            'syntax': [ '@{user}' ],
+            'validator': /^<@!?(\d+)>$|^<@&(\d+)>$/,
+            'desc': `Displays the last time \`user\` was online, or the last time all users in a role were online.`,
+            'syntax': [ '@{user}|@{role}' ],
             'class': SeenCommand,
             'params': {
                 'user': {
                     'optional': false,
                     'desc': `The user to look for.`,
                     'syntax': '@{user}'
+                },
+                'role': {
+                    'optional': false,
+                    'desc': `The role to look for.`,
+                    'syntax': '@{role}'
                 }
             }
         },

@@ -15,7 +15,8 @@ import GMailer from '../../utils/mailer.js';
 
 const BOT_ROLES = [
     ROLES.LPD_BOT,
-    ROLES.STATE_CHAIR
+    ROLES.STATE_CHAIR,
+    ROLES.ADMIN
 ];
 
 let voteId = 0;
@@ -184,7 +185,7 @@ export default class PollCommand extends BaseCommand {
                     this.supportPoll(freshMsg, voteDetails);
                 });
             }, (e) => {
-                const findUrl = voteDetails.question.match(/(url:\[.+\]\(.+\)) (.+)/) || voteDetails.question;
+                const findUrl = voteDetails.question.match(/(url:\[.+\]\(.+\)) (.+)/) || [null,null,voteDetails.question];
                 const embed = PollCommand.generateEmbed(findUrl[2], new Date(voteDetails.doneDate), findUrl[1]);
                 channel.send(`Poll for ${roleMentions}`, embed).then(freshMsg => {
                     this.supportPoll(freshMsg, voteDetails);
@@ -229,7 +230,8 @@ export default class PollCommand extends BaseCommand {
                 if (!eligibleIds.includes(u.id) && (voteHash !== 'e29d94')) return;
                 const closingTime = new Date(voteDetails.doneDate);
                 const now = new Date();
-                if (((voteHash === 'e29d8c' || voteHash === 'f09f93a8') && (u.id === guild.ownerID || members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR))) || now > closingTime) {
+                if ((voteHash === 'e29d8c' || voteHash === 'f09f93a8') || now > closingTime) {
+                    if ((u.id !== guild.ownerID && !members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR)) && now <= closingTime) return;
                     const resultEmbed = this.deletePoll(r, voteDetails, members, channel);
                     if (voteHash !== 'e29d8c') {
                         const roleNames = guild.roles.cache.filter(r => voteDetails.roles.includes(r.id)).map(r => r.name).join('/');

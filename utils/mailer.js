@@ -62,6 +62,7 @@ export default class GMailer {
 
 	static sendMail(to, subj, htmlText) {
 		return new Promise((resolve, reject) => {
+			if (!this.mailer) reject('Mailer not created.');
 			const utf8 = `=?utf-8?B?${Buffer.from(subj).toString('base64')}?=`;
 			const part = [
 				'From: LP Delaware <lpdelaware@gmail.com>',

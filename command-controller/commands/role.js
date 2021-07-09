@@ -109,7 +109,8 @@ export default class RoleCommand extends BaseCommand {
         this.ack();
         if (action === 'clear') {
             console.log(role, TEMP_ROLES)
-            if (!TEMP_ROLES.includes(role)) return this.complete('Not a temp role.');
+            console.log(this.member.user.id, this.guild.ownerID)
+            if (!TEMP_ROLES.includes(role) && this.member.user.id !== this.guild.ownerID) return this.complete('Not a temp role.');
             this.guild.members.fetch().then(members => {
                 members.forEach(member => {
                     if (member.roles.cache.has(role)) member.roles.remove(role);

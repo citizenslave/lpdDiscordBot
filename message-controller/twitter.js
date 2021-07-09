@@ -54,7 +54,7 @@ export default class TwitterSubmissionResponder {
             const status = message.content.match(STATUS_LINK);
     
             guild.members.fetch(u.id).then(member => {
-                if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,], [ROLES.SMM_DT,], [ROLES.STATE_BOARD,] ])).size)
+                if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,] ])).size)
                     return r.users.remove().catch();
                 
                 const postData = {

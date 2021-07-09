@@ -17,7 +17,8 @@ import GMailer from '../../utils/mailer.js';
 
 const BOT_ROLES = [
     ROLES.LPD_BOT,
-    ROLES.STATE_CHAIR
+    ROLES.STATE_CHAIR,
+    ROLES.ADMIN
 ];
 
 let voteId = 0;
@@ -220,7 +221,6 @@ export default class BallotCommand extends BaseCommand {
             message.createReactionCollector(() => true, {}).on('collect', (r, u) => {
                 if (u.bot) return;
                 r.users.remove(u).catch();
-
                 const voteHash = Buffer.from(r.emoji.toString()).toString('hex');
                 const votes = {
                     'f09f87a6': 0, 'f09f87a7': 0, 'f09f87a8': 0, 'f09f87a9': 0,
@@ -232,12 +232,13 @@ export default class BallotCommand extends BaseCommand {
 
                 const eligibleRoles = new DISCORD.Collection(voteDetails.roles.map(r => [r, null]));
                 const eligibleIds = members.filter(i => i.roles.cache.intersect(eligibleRoles).size).map(i => i.id);
-                if (!eligibleIds.includes(u.id) && voteHash !== 'e29d94') return;
+                if (!eligibleIds.includes(u.id) && u.id !== guild.ownerID && voteHash !== 'e29d94') return;
 
                 const now = new Date();
-                const closingDate = new Date(voteDetails.doneDate);
-
-                if (((voteHash === 'e29d8c' || voteHash === 'f09f93a8') && (members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR) || u.id === guild.ownerID)) || now > closingDate) {
+                const closingTime = new Date(voteDetails.doneDate);
+                
+                if ((voteHash === 'e29d8c' || voteHash === 'f09f93a8') || now > closingTime) {
+                    if ((u.id !== guild.ownerID && !members.get(u.id).roles.cache.has(ROLES.STATE_CHAIR)) && now <= closingTime) return;
                     voteDetails.votes.forEach(vote => vote.candidate?votes[vote.voteHash]++:0);
 
                     const totalVotes = voteDetails.votes.filter(v => v.candidate).length;
@@ -375,7 +376,7 @@ export default class BallotCommand extends BaseCommand {
 
                     VOTE_PERSISTANCE.writeFile(BallotCommand.voteData);
                     const description = embedUpdate.description.split('\n');
-                    description[description.length-1] = `(${voteDetails.voters.length}/${eligibleIds.length}) eligible votes.`
+                    description[description.length-1] = `(${voteDetails.votes.filter(v => v.candidate).length}/${eligibleIds.length}) eligible votes.`
                     embedUpdate.setDescription(description.join('\n'));
                     r.message.edit(embedUpdate).catch(console.log);
                 }
@@ -592,9 +593,9 @@ export default class BallotCommand extends BaseCommand {
                     channel.messages.fetch(vote.message).then(ballotMessage => {
                         const embedUpdate = new DISCORD.MessageEmbed(ballotMessage.embeds[0]);
                         const desc = embedUpdate.description.split('\n');
-                        const tally = desc[desc.length-1].match(/^(\d+)\/(.+)$/);
+                        const tally = desc[desc.length-1].match(/^\((\d+)\/(.+)\) eligible votes.$/);
                         if (vote.votes.filter(v => v.user === message.author.id).length === 1)
-                            desc[desc.length-1] = `${Number(tally[1])+1}/${tally[2]}`;
+                            desc[desc.length-1] = `(${Number(tally[1])+1}/${tally[2]}) eligible votes.`;
                         embedUpdate.setDescription(desc.join('\n'));
                         if (!vote.secret) {
                             embedUpdate.fields[1].value = embedUpdate.fields[1].value.split('\n')
