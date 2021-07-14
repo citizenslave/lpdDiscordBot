@@ -24,10 +24,10 @@ const STATE_ACCESS = CREDS.fb_access['3c3a6c70643a383136323233303832373238373833
 
 export default class FacebookSubmissionResponder {
     static handleMessage(message) {
-        if (message.channel.id === CHANS.FACEBOOK_CHAN && !message.channel.bot) {
+        if (message.channel.id === CHANS.FACEBOOK_CHAN && !message.channel.bot && !message.content.startsWith('!!')) {
             message.react('👍');
             message.react(':lpd:816223082728783902');
-            message.react(':twitter:861621320672215060');
+            if (message.content.length < 280) message.react(':twitter:861621320672215060');
             message.react('❌');
     
             const collector = message.createReactionCollector(() => true, {});
@@ -45,8 +45,8 @@ export default class FacebookSubmissionResponder {
             const message = r.message;
     
             guild.members.fetch(u.id).then(member => {
-                if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.ADMIN,], [ROLES.CONTRIBUTORS,] ])).size)
-                    return r.users.remove().catch();
+                if (!member.roles.cache.intersect(new DISCORD.Collection([ [ROLES.CONTRIBUTORS,] ])).size)
+                    return r.users.remove(u).catch();
 
                 const reactHash = Buffer.from(r.emoji.toString()).toString('hex');
                 
@@ -63,6 +63,9 @@ export default class FacebookSubmissionResponder {
                 message.reactions.cache.forEach(existingReact => {
                     const currentHash = Buffer.from(existingReact.emoji.toString()).toString('hex');
                     if (currentHash === 'e29d8c') existingReact.remove();
+                });
+                reactions.forEach((v, i, a) => {
+                    if (!message.reactions.cache.find(r => Buffer.from(r.emoji.toString()).toString('hex') === v && r.users.cache.size > 1)) a[i] = '';
                 });
 
                 if (reactions.includes('3c3a747769747465723a3836313632313332303637323231353036303e')) {
@@ -83,7 +86,6 @@ export default class FacebookSubmissionResponder {
                     }
 
                     Promise.all(fbResolve).then(resData => {
-                        console.log(resData)
                         let pageId, storyId;
                         if (resData.length > 1) {
                             pageId = JSON.parse(resData[1].toString()).id;
@@ -104,7 +106,6 @@ export default class FacebookSubmissionResponder {
                             if (fbData.length > 1) {
                                 fbData.shift();
                                 fbData = fbData.map(d => JSON.parse(d.toString()));
-                                console.log(fbData);
                                 content = fbData[0].message || '';
                                 if (fbData[1].data[0].type === 'share') {
                                     content += `\n${unescape(FB_SHARE.exec(fbData[1].data[0].url)[1])}`;
@@ -115,7 +116,6 @@ export default class FacebookSubmissionResponder {
                                 content = message.content;
                                 attachmentList = message.attachments;
                             }
-                            console.log(content, attachmentList);
                             const attachments = attachmentList.map(a => UTILS.getHttpsRequest(a.url));
                             attachments.push(Promise.resolve());
                             
@@ -194,5 +194,15 @@ export default class FacebookSubmissionResponder {
                 collector.stop();
             });
         }
+    }
+
+    static reconnect(client) {
+        client.channels.resolve(CHANS.FACEBOOK_CHAN).messages.fetch({ 'cache': true }).then(messages => {
+            messages = messages.filter(m => m.reactions.cache.size === 4);
+            messages.forEach(m => {
+                const collector = m.createReactionCollector(() => true, {});
+                collector.on('collect', this.fbApproval(collector));
+            });
+        });
     }
 }

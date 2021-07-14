@@ -81,6 +81,7 @@ CLIENT.once('ready', () => {
     PollCommand.reloadPolls(CLIENT);
     BallotCommand.reloadBallots(CLIENT);
     RulesCommand.reconnectRules(CLIENT);
+    FacebookSubmissionResponder.reconnect(CLIENT);
 
     MESSAGE_HANDLERS.push(TaxationResponder);
     MESSAGE_HANDLERS.push(LoveResponder);
